@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.coverage.*
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# SQLite database
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Node.js
+node_modules/
+.next/
+out/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Alembic (保留 migrations/ 目录本身，忽略 pycache)
+migrations/__pycache__/
+
+# 不忽略以下目录（明确声明）
+# docs/          → 必须提交
+# content/       → 必须提交
+# frontend/      → 必须提交
+# backend/       → 必须提交
+# scripts/       → 必须提交
+# migrations/    → 必须提交
