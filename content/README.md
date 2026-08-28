@@ -108,4 +108,79 @@ YAML 中消失的数据不 hard delete。后续 import 结合 `is_active` 设计
 
 - Task 2.7：validator（校验 ID 唯一性、parent 存在性、level 一致性等）
 - Task 2.8：importer（实际同步到 SQLite）
-- 当前尚未定义 Knowledge Card / Question Schema
+- 当前尚未定义 Question Schema
+
+---
+
+## 10. Knowledge Card 目录结构
+
+```
+content/cards/
+├── spark.shuffle.md
+├── hive.partition.md
+└── ...
+```
+
+文件名 = knowledge_point_id + `.md`。
+
+## 11. Card Stable ID 规则
+
+- card id = `card.` + knowledge_point_id
+- 示例：knowledge_point_id `spark.shuffle` → card id `card.spark.shuffle`
+- 一个 knowledge_point 最多对应一张 card
+- knowledge_point name 改变 → card id 不变
+- knowledge_point stable id 不变 → card 继续绑定原知识点
+
+## 12. Knowledge Card Front Matter
+
+```yaml
+---
+knowledge_point_id: spark.shuffle
+title: Shuffle
+is_active: true
+---
+```
+
+| 字段 | 必填 | 默认值 | 说明 |
+|------|------|--------|------|
+| `knowledge_point_id` | ✅ | — | 对应知识点 ID |
+| `title` | ✅ | — | 卡片标题 |
+| `is_active` | ❌ | true | 是否启用 |
+
+不包含 `id`、`revision`、`source_hash`、`imported_at`（由 importer/DB 管理）。
+
+## 13. Knowledge Card Markdown 正文规则
+
+正文从 `## 一句话定义` 开始，**不写 `#` 一级标题**（title 由 Front Matter 提供）。
+
+固定 section：
+
+```
+## 一句话定义
+## 核心原理
+## 面试高频点
+## 常见易错点
+```
+
+允许：普通段落、列表、行内代码、fenced code block、Markdown table、加粗/斜体。
+
+禁止：图片、HTML、正文一级标题（#）、复杂嵌入内容。
+
+外链可以使用，但卡片核心知识不应依赖外链才能理解。
+
+正文目标：3-5 分钟快速复习。
+
+## 14. Revision / Source Hash 规则
+
+- source_hash 使用 SHA-256 对规范化后的 `title + Markdown body` 计算
+- title 变化 → source_hash 变化 → revision + 1
+- 正文变化 → source_hash 变化 → revision + 1
+- 仅文件 mtime 变化，hash 不变 → 不产生 revision
+- 首次导入：revision = 1
+- is_active 变化 → 不产生新 revision，直接更新 knowledge_card.is_active
+
+## 15. knowledge_point_id 绑定变更规则
+
+- knowledge_point_id 属于稳定绑定关系，不参与正文 revision
+- 同一 card 已进入历史数据后，不允许普通内容修改顺手更换 knowledge_point_id
+- 未来 importer 遇到绑定变化应报错，而不是静默迁移
