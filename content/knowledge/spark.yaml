@@ -1,0 +1,17 @@
+- id: spark
+  name: Spark
+  description: Apache Spark 分布式计算框架
+  sort_order: 1
+  children:
+    - id: spark.rdd
+      name: RDD
+      description: 弹性分布式数据集（Resilient Distributed Dataset）
+      sort_order: 1
+    - id: spark.shuffle
+      name: Shuffle
+      description: 数据重分区与跨节点传输机制
+      sort_order: 2
+    - id: spark.stage
+      name: Stage
+      description: 由 Shuffle 边界划分的任务单元
+      sort_order: 3

@@ -1,0 +1,13 @@
+- id: hive
+  name: Hive
+  description: 基于 Hadoop 的数据仓库工具
+  sort_order: 2
+  children:
+    - id: hive.partition
+      name: 分区与分桶
+      description: Partition 和 Bucket 的设计与使用
+      sort_order: 1
+    - id: hive.table_type
+      name: 内部表与外部表
+      description: Internal Table 和 External Table 的区别
+      sort_order: 2
