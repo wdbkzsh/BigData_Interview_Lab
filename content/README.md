@@ -495,3 +495,261 @@ Content YAML 不包含自评状态。用户提交后选择：
 | 熟练掌握 | mastered | 4 | 14天后 |
 
 Short Answer 没有 final_score / max_score / score_ratio / AI 评分。
+
+---
+
+## 29. SQL 目录结构
+
+```
+content/questions/sql/
+├── spark.shuffle.sql.001.yaml
+├── hive.partition.sql.001.yaml
+└── ...
+```
+
+每个文件一个 SQL 题，纯 YAML 格式。
+
+## 30. SQL Stable ID 规则
+
+格式：`{primary_knowledge_point_id}.sql.{3位序号}`
+
+示例：
+
+```text
+spark.shuffle.sql.001
+hive.partition.sql.001
+```
+
+规则：
+
+- `.sql.` 是 stable ID 中的短类型标识
+- question_type 固定为 `sql`
+- ID 全项目唯一，进入 Attempt 历史后不可变
+- 序号固定三位数字，从 001 起步
+
+## 31. SQL YAML Schema
+
+```yaml
+id: spark.shuffle.sql.001
+question_type: sql
+primary_knowledge_point_id: spark.shuffle
+title: "各品类销售额 Top3 门店"
+difficulty: 4
+tags:
+  - sql
+  - 窗口函数
+related_knowledge_points: []
+is_active: true
+
+content: |
+  题目描述。
+
+table_schema: |
+  CREATE TABLE ...;
+
+field_description: |
+  - 字段说明
+
+business_requirement: |
+  1. 业务要求 1
+  2. 业务要求 2
+
+expected_sql: |
+  SELECT ...;
+
+scoring_criteria:
+  - id: c1
+    description: 评分点描述
+    points: 3
+```
+
+### 必填字段
+
+id, question_type, primary_knowledge_point_id, content, business_requirement, scoring_criteria, difficulty
+
+### 可选字段
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| title | null | 题目标题 |
+| table_schema | null | 建表语句 |
+| field_description | null | 字段说明 |
+| expected_sql | null | 参考 SQL（仅供 LLM 理解题意） |
+| tags | [] | 字符串列表 |
+| related_knowledge_points | [] | 知识点 stable id 列表 |
+| is_active | true | 是否有效 |
+
+### difficulty
+
+整数 1-5，数据库 CHECK 约束。
+
+### related_knowledge_points 规则
+
+- 知识点 stable id 列表
+- 可为空
+- 不允许重复
+- `primary_knowledge_point_id` 不允许出现在 related 中
+- 只能引用 `content/knowledge/` 中已存在的 stable ID
+- 导入时使用数据库默认 weight（1.0）
+
+## 32. SQL content / business_requirement 边界
+
+两者都需要存在，职责不同：
+
+| 字段 | 用途 |
+|------|------|
+| content | 用户看到的题面描述 |
+| business_requirement | LLM 判题使用的精确业务要求 |
+
+business_requirement 使用 YAML block scalar，编号列表形式：
+
+```yaml
+business_requirement: |
+  1. 业务结果要求 1
+  2. 业务结果要求 2
+```
+
+规则：
+
+- 内容必须是业务结果要求
+- 不写「必须使用 ROW_NUMBER」「必须使用 CTE」等写法约束
+- 除非题目本身明确考察某种指定 SQL 技法
+- 原则：优先评分结果逻辑是否正确，而不是写法是否相同
+
+## 33. SQL scoring_criteria 结构
+
+```yaml
+scoring_criteria:
+  - id: c1
+    description: 评分点描述
+    points: 3
+  - id: c2
+    description: 评分点描述
+    points: 2
+```
+
+规则：
+
+- criterion id 在同一题内唯一
+- description 必填
+- points 为正整数
+- 不包含 knowledge_point_id
+- Question 与知识点关系使用 primary_knowledge_point_id + related_knowledge_points
+
+### max_score 自动计算
+
+```python
+max_score = sum(c["points"] for c in scoring_criteria)
+```
+
+YAML 中不重复填写 max_score，importer 导入时自动计算并存入 payload_json。
+
+## 34. SQL table_schema / field_description 规则
+
+- 可选字段，用于描述可使用的表及字段结构
+- 补充字段业务含义
+- 如果没有必要，不要为了填字段强行写内容
+- 当前不连接真实数据库执行 SQL
+
+## 35. SQL expected_sql 使用边界
+
+```yaml
+expected_sql: |
+  SELECT ...;
+```
+
+**expected_sql 定位**：只作为 LLM 理解业务意图的参考实现。
+
+**绝对禁止**：
+
+- SQL 文本相似度评分
+- SQL AST/结构相似度评分
+- 因为和 expected_sql 写法不同就扣分
+- 把 expected_sql 当唯一正确答案
+
+**允许**：多种逻辑等价写法同样可以判为正确。
+
+**当前每题最多一个 expected_sql 参考实现**，不建立列表。系统原则本身就是其他逻辑等价写法同样正确。
+
+**提交前 GET Question 必须隐藏**：expected_sql、scoring_criteria。
+
+**提交后**：MVP 默认返回 AI assessment（raw_score/final_score、criteria results、mastered、weak、missing、errors、suggestions、summary）。expected_sql 暂时仍属于内部判题参考，不返回给用户。
+
+## 36. SQL Question / QuestionVersion 映射
+
+**Question 表字段映射**：
+
+| YAML 字段 | Question 字段 |
+|-----------|--------------|
+| id | id |
+| question_type | question_type |
+| primary_knowledge_point_id | primary_knowledge_point_id |
+| title | title |
+| difficulty | difficulty |
+| tags | tags_json |
+| is_active | is_active |
+
+**QuestionVersion.payload_json** 保存完整题目内容：
+
+```json
+{
+  "content": "...",
+  "table_schema": "...",
+  "field_description": "...",
+  "business_requirement": "...",
+  "expected_sql": "...",
+  "scoring_criteria": [
+    {"id": "c1", "description": "...", "points": 3}
+  ],
+  "max_score": 10
+}
+```
+
+### revision 规则
+
+- 首次导入：revision = 1
+- content / table_schema / field_description / business_requirement / expected_sql / scoring_criteria 任一变化 → source_hash 变化 → revision + 1
+- source_hash 对上述六部分规范化后的内容计算 SHA-256
+- title / difficulty / tags / is_active 变化不产生新 revision
+
+### primary_knowledge_point_id 变更规则
+
+已有历史 Attempt 时，importer 应报错等待确认，不静默 UPDATE。
+
+## 37. SQL AI Assessment / AttemptKnowledgeResult 边界
+
+**当前只记录规则，不实现**。
+
+### AIAssessment（仅 SQL 题）
+
+- 每次 LLM 判题产生一条记录
+- 一个 Attempt 可以有多条（重试、重新判题）
+- 存储：raw_score、max_score、result_json（含各 criteria 评分结果）
+
+### AttemptKnowledgeResult（仅 SQL 题）
+
+- LLM 根据题目知识点关联 + business_requirement + scoring_criteria + 用户 SQL 实际表现综合生成
+- mastered / weak / missing 分类
+- 不是 criterion 与 knowledge_point 的机械一对一绑定
+
+## 38. SQL 答案泄露规则
+
+**提交前 GET Question 必须隐藏**：
+
+- expected_sql
+- scoring_criteria
+
+**返回给用户的字段**：
+
+- id, revision, question_type, content, table_schema, field_description, business_requirement, difficulty, max_score
+
+**提交后 MVP 默认返回**：
+
+- AI assessment（raw_score/final_score、criteria results、mastered、weak、missing、errors、suggestions、summary）
+- expected_sql 暂时不返回，属于内部判题参考
+
+**SQL 判题依据**：business_requirement + scoring_criteria
+
+**禁止**：SQL 文本或结构相似度判分
+
+**允许**：多种逻辑正确实现

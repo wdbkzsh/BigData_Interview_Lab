@@ -1,0 +1,82 @@
+id: spark.shuffle.sql.001
+question_type: sql
+primary_knowledge_point_id: spark.shuffle
+title: "各品类销售额 Top3 门店"
+difficulty: 4
+tags:
+  - sql
+  - 窗口函数
+  - 聚合
+related_knowledge_points:
+  - spark.rdd
+  - spark.stage
+is_active: true
+
+content: |
+  给定门店销售明细表 store_sales，查询每个产品品类下销售额排名前 3 的门店。
+
+table_schema: |
+  CREATE TABLE store_sales (
+    store_id INT,
+    store_name STRING,
+    category STRING,
+    sale_amount DECIMAL(12,2)
+  );
+
+field_description: |
+  - store_id：门店 ID
+  - store_name：门店名称
+  - category：产品品类
+  - sale_amount：单笔销售金额
+
+business_requirement: |
+  1. 按品类分组，计算每个门店在该品类下的总销售额
+  2. 在每个品类内按总销售额降序排名
+  3. 只返回每个品类排名前 3 的门店
+  4. 如果并列第 3，全部返回
+  5. 返回字段：category, store_id, store_name, total_amount, rank_no
+
+expected_sql: |
+  WITH store_total AS (
+    SELECT
+      category,
+      store_id,
+      store_name,
+      SUM(sale_amount) AS total_amount
+    FROM store_sales
+    GROUP BY category, store_id, store_name
+  ),
+  ranked AS (
+    SELECT
+      category,
+      store_id,
+      store_name,
+      total_amount,
+      RANK() OVER (
+        PARTITION BY category
+        ORDER BY total_amount DESC
+      ) AS rank_no
+    FROM store_total
+  )
+  SELECT
+    category,
+    store_id,
+    store_name,
+    total_amount,
+    rank_no
+  FROM ranked
+  WHERE rank_no <= 3;
+
+scoring_criteria:
+  - id: c1
+    description: 按 category、store_id、store_name 正确汇总 sale_amount 得到门店在品类下的 total_amount
+    points: 3
+  - id: c2
+    description: 在每个 category 内按 total_amount 降序进行排名
+    points: 3
+  - id: c3
+    description: 正确保留并列第 3 名，因此不能使用会任意截断并列结果的逻辑
+    points: 2
+  - id: c4
+    description: 最终只返回 rank_no <= 3，并输出要求的字段
+    points: 2

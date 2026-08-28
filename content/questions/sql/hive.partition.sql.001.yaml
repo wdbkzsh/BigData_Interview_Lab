@@ -1,0 +1,61 @@
+id: hive.partition.sql.001
+question_type: sql
+primary_knowledge_point_id: hive.partition
+title: "按日期分区统计活跃用户"
+difficulty: 3
+tags:
+  - sql
+  - hive
+  - 分区裁剪
+  - 聚合
+related_knowledge_points:
+  - hive.table_type
+is_active: true
+
+content: |
+  给定按 dt 分区的用户行为日志表 user_events，统计 2026-08-22 至 2026-08-28 每天的活跃用户数（UV）。
+
+table_schema: |
+  CREATE TABLE user_events (
+    user_id INT,
+    event_type STRING,
+    event_time TIMESTAMP
+  )
+  PARTITIONED BY (dt STRING);
+
+field_description: |
+  - user_id：用户 ID
+  - event_type：事件类型（view / click / purchase）
+  - event_time：事件发生时间戳
+  - dt：日期分区字段，格式 yyyy-MM-dd
+
+business_requirement: |
+  1. 统计范围固定为 2026-08-22 至 2026-08-28，包含首尾日期
+  2. 每天按 user_id 去重计算 UV
+  3. 查询必须包含对分区字段 dt 的范围过滤，以便利用 Partition Pruning
+  4. 按 dt 分组
+  5. 返回 dt 和 uv，并按 dt 升序排列
+
+expected_sql: |
+  SELECT
+    dt,
+    COUNT(DISTINCT user_id) AS uv
+  FROM user_events
+  WHERE dt >= '2026-08-22'
+    AND dt <= '2026-08-28'
+  GROUP BY dt
+  ORDER BY dt;
+
+scoring_criteria:
+  - id: c1
+    description: 对分区字段 dt 正确限定 2026-08-22 至 2026-08-28 的统计范围
+    points: 3
+  - id: c2
+    description: 每个 dt 按 user_id 去重计算活跃用户数
+    points: 3
+  - id: c3
+    description: 按 dt 正确分组并返回 dt、uv
+    points: 2
+  - id: c4
+    description: 最终结果按 dt 升序排列
+    points: 2
