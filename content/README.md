@@ -184,3 +184,158 @@ is_active: true
 - knowledge_point_id 属于稳定绑定关系，不参与正文 revision
 - 同一 card 已进入历史数据后，不允许普通内容修改顺手更换 knowledge_point_id
 - 未来 importer 遇到绑定变化应报错，而不是静默迁移
+
+---
+
+## 16. Choice 目录结构
+
+```
+content/questions/choice/
+├── spark.shuffle.choice.001.yaml
+├── hive.partition.choice.001.yaml
+└── ...
+```
+
+每个文件一个选择题，纯 YAML 格式。
+
+## 17. Choice Stable ID 规则
+
+格式：`{primary_knowledge_point_id}.choice.{3位序号}`
+
+示例：
+
+```text
+spark.shuffle.choice.001
+spark.shuffle.choice.002
+hive.partition.choice.001
+```
+
+规则：
+
+- ID 全项目唯一
+- 一旦进入历史 Attempt 后，不因题干、答案、标题修改而改变
+- 序号固定三位数字，从 001 起步
+
+## 18. Choice YAML Schema
+
+```yaml
+id: spark.shuffle.choice.001
+question_type: choice
+primary_knowledge_point_id: spark.shuffle
+title: "Shuffle 触发条件"
+difficulty: 2
+tags:
+  - spark
+  - shuffle
+related_knowledge_points: []
+is_active: true
+
+content: 题目正文？
+
+options:
+  - key: A
+    text: 选项内容
+  - key: B
+    text: 选项内容
+  - key: C
+    text: 选项内容
+  - key: D
+    text: 选项内容
+
+correct_answer: C
+
+explanation: 答案解析。
+```
+
+### 必填字段
+
+id, question_type, primary_knowledge_point_id, content, options, correct_answer, explanation, difficulty
+
+### 可选字段
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| title | null | 题目标题 |
+| tags | [] | 字符串列表，不创建 Tag 实体 |
+| related_knowledge_points | [] | 知识点 stable id 列表 |
+| is_active | true | 是否有效 |
+
+### difficulty
+
+整数 1-5，数据库 CHECK 约束。
+
+### related_knowledge_points 规则
+
+- 知识点 stable id 列表
+- 可为空
+- 不允许重复
+- `primary_knowledge_point_id` 不允许再次出现在 related 中
+- 导入时使用数据库默认 weight（1.0）
+
+## 19. Choice options 格式
+
+```yaml
+options:
+  - key: A
+    text: 选项内容
+  - key: B
+    text: 选项内容
+```
+
+规则：
+
+- key 必须唯一
+- 当前使用 A/B/C/D
+- 顺序按照 YAML 列表顺序
+- text 非空
+- 不使用 YAML Map（`A: ...`）或 Markdown（`- A. ...`）
+
+## 20. Choice correct_answer
+
+当前 MVP 为单选，使用单个 option key 字符串：
+
+```yaml
+correct_answer: C
+```
+
+判题规则：完全正确 → 1，错误 → 0
+
+## 21. Choice Question / QuestionVersion 映射
+
+**Question 表字段映射**：
+
+| YAML 字段 | Question 字段 |
+|-----------|--------------|
+| id | id |
+| question_type | question_type |
+| primary_knowledge_point_id | primary_knowledge_point_id |
+| title | title |
+| difficulty | difficulty |
+| tags | tags_json |
+| is_active | is_active |
+
+**QuestionVersion.payload_json** 保存完整题目内容：
+
+```json
+{
+  "content": "...",
+  "options": [{"key": "A", "text": "..."}],
+  "correct_answer": "C",
+  "explanation": "..."
+}
+```
+
+### revision 规则
+
+- 首次导入：revision = 1
+- content / options / correct_answer / explanation 任一变化 → source_hash 变化 → revision + 1
+- source_hash 对上述四部分规范化后的内容计算 SHA-256
+- difficulty / tags / is_active / title 变化不产生新 revision
+
+### primary_knowledge_point_id 变更规则
+
+已有历史 Attempt 时，importer 应报错等待确认，不静默 UPDATE。
+
+## 22. Choice 答案泄露规则
+
+Content YAML 中保存 correct_answer 和 explanation，但未来 GET Question API 在提交前必须剔除这两个字段。当前只记录规则，不实现 API。

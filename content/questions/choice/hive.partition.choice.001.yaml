@@ -1,0 +1,28 @@
+id: hive.partition.choice.001
+question_type: choice
+primary_knowledge_point_id: hive.partition
+title: Hive 分区表查询优势
+difficulty: 2
+tags:
+  - hive
+  - partition
+  - 查询优化
+related_knowledge_points:
+  - hive.table_type
+is_active: true
+
+content: Hive 分区表的主要优势是什么？
+
+options:
+  - key: A
+    text: 减少数据存储量
+  - key: B
+    text: 提高数据写入速度
+  - key: C
+    text: 查询时只需扫描相关分区，减少 I/O
+  - key: D
+    text: 自动实现数据去重
+
+correct_answer: C
+
+explanation: Hive 分区表通过将数据按分区键（如日期 dt）分散到不同目录，查询时指定分区条件可以只扫描相关分区目录，显著减少数据扫描量。分区不会减少总存储量、不提高写入速度、不实现去重。

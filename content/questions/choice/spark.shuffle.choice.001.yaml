@@ -1,0 +1,26 @@
+id: spark.shuffle.choice.001
+question_type: choice
+primary_knowledge_point_id: spark.shuffle
+title: Shuffle 触发条件
+difficulty: 2
+tags:
+  - spark
+  - shuffle
+related_knowledge_points: []
+is_active: true
+
+content: 以下哪个操作一定会触发 Spark Shuffle？
+
+options:
+  - key: A
+    text: map
+  - key: B
+    text: filter
+  - key: C
+    text: repartition
+  - key: D
+    text: mapPartitions
+
+correct_answer: C
+
+explanation: repartition 会重新分区，因此会触发 Shuffle。map、filter、mapPartitions 都是窄依赖，不会产生 Shuffle。
