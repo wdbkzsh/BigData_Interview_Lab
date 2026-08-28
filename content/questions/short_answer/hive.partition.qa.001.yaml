@@ -1,0 +1,29 @@
+id: hive.partition.qa.001
+question_type: short_answer
+primary_knowledge_point_id: hive.partition
+title: Hive 分区键选择与注意事项
+difficulty: 3
+tags:
+  - hive
+  - partition
+related_knowledge_points: []
+is_active: true
+
+content: Hive 中如何选择分区键？有哪些注意事项？
+
+reference_answer: |
+  分区键选择原则：
+  - 高频过滤字段优先（如日期 dt、地区 region）
+  - 基数不宜过高（避免产生过多小文件）
+  - 常见分区键：日期（dt/pt）、业务线、地区
+
+  注意事项：
+  - 查询时应尽量在 WHERE 或 JOIN ON 中提供可用于分区裁剪的分区条件；等值、范围等谓词都可能触发 Partition Pruning。没有可用于裁剪的分区条件时，通常需要扫描更多甚至全部相关分区
+  - 动态分区插入时需控制数量（hive.exec.max.dynamic.partitions）
+  - 分区过多会导致 NameNode 压力增大
+  - 分区字段通常不存储在数据文件本身，而是由分区目录和元数据提供；在 Hive 查询中仍然可以作为列用于 SELECT、WHERE 等位置
+
+explanation: |
+  面试中考察 Hive 分区，重点是「为什么分区」「怎么选」「踩过什么坑」。
+  易错点：分区字段虽然通常不存储在数据文件中，但在查询层面仍然是可使用的分区列，可以用于 SELECT 和 WHERE。真正需要关注的是查询条件能否实现 Partition Pruning。
+  实际生产中，按日期分区是最常见的模式，既能保证查询效率，又便于数据生命周期管理。

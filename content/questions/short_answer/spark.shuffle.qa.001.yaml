@@ -1,0 +1,27 @@
+id: spark.shuffle.qa.001
+question_type: short_answer
+primary_knowledge_point_id: spark.shuffle
+title: Shuffle 本质与性能瓶颈
+difficulty: 3
+tags:
+  - spark
+  - shuffle
+related_knowledge_points: []
+is_active: true
+
+content: 请解释 Spark Shuffle 的本质以及它为什么是性能瓶颈。
+
+reference_answer: |
+  Spark Shuffle 是宽依赖（Wide Dependency）的数据重新分布过程。
+  当父 RDD 的一个分区数据可能被子 RDD 的多个分区使用时，就会触发 Shuffle。
+
+  Shuffle 之所以是性能瓶颈，原因包括：
+  - 磁盘 I/O：中间结果需要写磁盘再读取
+  - 网络 I/O：数据需要在节点间传输
+  - 序列化/反序列化开销
+  - 可能产生数据倾斜（Data Skew）
+
+explanation: |
+  面试中回答 Shuffle 问题，建议从「是什么 → 为什么慢 → 如何优化」三段式展开。
+  关键词：宽依赖、磁盘 I/O、网络传输、序列化。
+  常见优化手段：减少 Shuffle 数据量（map-side combine）、合理设置分区数、避免数据倾斜。

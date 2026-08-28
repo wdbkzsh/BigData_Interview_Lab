@@ -339,3 +339,159 @@ correct_answer: C
 ## 22. Choice 答案泄露规则
 
 Content YAML 中保存 correct_answer 和 explanation，但未来 GET Question API 在提交前必须剔除这两个字段。当前只记录规则，不实现 API。
+
+---
+
+## 23. Short Answer 目录结构
+
+```
+content/questions/short_answer/
+├── spark.shuffle.qa.001.yaml
+├── hive.partition.qa.001.yaml
+└── ...
+```
+
+每个文件一个问答题，纯 YAML 格式。
+
+## 24. Short Answer Stable ID 规则
+
+格式：`{primary_knowledge_point_id}.qa.{3位序号}`
+
+示例：
+
+```text
+spark.shuffle.qa.001
+spark.shuffle.qa.002
+hive.partition.qa.001
+```
+
+规则：
+
+- `.qa.` 是 stable ID 中的短类型标识，不是 question_type
+- ID 全项目唯一
+- 一旦进入历史 Attempt 后，不因题干修改而变化
+- 序号固定三位数字，从 001 起步
+
+## 25. Short Answer YAML Schema
+
+```yaml
+id: spark.shuffle.qa.001
+question_type: short_answer
+primary_knowledge_point_id: spark.shuffle
+title: "Shuffle 本质与性能瓶颈"
+difficulty: 3
+tags:
+  - spark
+  - shuffle
+related_knowledge_points: []
+is_active: true
+
+content: 题目正文？
+
+reference_answer: |
+  参考答案内容。
+  支持多段、列表、行内代码。
+
+explanation: |
+  解析内容。
+```
+
+### 必填字段
+
+id, question_type, primary_knowledge_point_id, content, reference_answer, explanation, difficulty
+
+### 可选字段
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| title | null | 题目标题 |
+| tags | [] | 字符串列表 |
+| related_knowledge_points | [] | 知识点 stable id 列表 |
+| is_active | true | 是否有效 |
+
+### difficulty
+
+整数 1-5，数据库 CHECK 约束。
+
+### related_knowledge_points 规则
+
+- 知识点 stable id 列表
+- 可为空
+- 不允许重复
+- `primary_knowledge_point_id` 不允许出现在 related 中
+- 只能引用 `content/knowledge/` 中已存在的 stable ID
+- 导入时使用数据库默认 weight（1.0）
+
+## 26. Short Answer reference_answer 格式
+
+使用 YAML block scalar（`|`），允许 Markdown 风格：
+
+```yaml
+reference_answer: |
+  第一段内容。
+
+  - 列表项 1
+  - 列表项 2
+
+  `代码示例`
+```
+
+- 单个字符串字段，不是结构化对象
+- 允许多段、列表、行内代码
+- 面试问答通常需要多段内容，block scalar 可读性最佳
+
+## 27. Short Answer Question / QuestionVersion 映射
+
+**Question 表字段映射**：
+
+| YAML 字段 | Question 字段 |
+|-----------|--------------|
+| id | id |
+| question_type | question_type |
+| primary_knowledge_point_id | primary_knowledge_point_id |
+| title | title |
+| difficulty | difficulty |
+| tags | tags_json |
+| is_active | is_active |
+
+**QuestionVersion.payload_json** 保存完整题目内容：
+
+```json
+{
+  "content": "...",
+  "reference_answer": "...",
+  "explanation": "..."
+}
+```
+
+### revision 规则
+
+- 首次导入：revision = 1
+- content / reference_answer / explanation 任一变化 → source_hash 变化 → revision + 1
+- source_hash 对上述三部分规范化后的内容计算 SHA-256
+- title / difficulty / tags / is_active 变化不产生新 revision
+
+### primary_knowledge_point_id 变更规则
+
+已有历史 Attempt 时，importer 应报错等待确认，不静默 UPDATE。
+
+## 28. Short Answer 答案泄露与自评规则
+
+### 答案泄露
+
+- 提交前 GET Question：不得返回 reference_answer 和 explanation
+- 提交后：返回 user_answer + reference_answer + explanation + mastery_options
+- 当前只记录规则，不实现 API
+
+### 自评掌握状态
+
+Content YAML 不包含自评状态。用户提交后选择：
+
+| 用户选择 | mastery_state | review_stage | next_review_date |
+|---------|---------------|--------------|------------------|
+| 不会 | unmastered | 0 | 1天后 |
+| 模糊 | vague | 1 | 2天后 |
+| 基本掌握 | familiar | 3 | 7天后 |
+| 熟练掌握 | mastered | 4 | 14天后 |
+
+Short Answer 没有 final_score / max_score / score_ratio / AI 评分。
