@@ -121,6 +121,54 @@ def extract_headings(body: str) -> list[tuple[int, str]]:
     return headings
 
 
+def extract_section_content(body: str, section_title: str) -> str:
+    """Extract the content of a specific H2 section from Markdown body.
+
+    Returns the section content as a string (stripped), or empty string
+    if the section is not found.  Content between the matched H2 and the
+    next H2 (or end of document) is returned.
+    """
+    # Remove fenced code blocks to avoid false heading matches
+    parts = _FENCED_CODE_RE.split(body)
+    outside_code = parts[::2]
+    cleaned_body = "".join(outside_code)
+
+    pattern = re.compile(
+        rf"^## {re.escape(section_title)}\s*\n(.*?)(?=^## |\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(cleaned_body)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+_CARD_SECTIONS = [
+    "一句话定义",
+    "核心原理",
+    "面试高频点",
+    "常见易错点",
+]
+
+
+def build_card_content_json(title: str, body: str) -> dict[str, str]:
+    """Build structured content_json dict from card title + Markdown body.
+
+    Returns a dict with keys: title, one_line_definition, core_principle,
+    interview_highlights, common_mistakes.
+    """
+    section_map = {
+        "一句话定义": "one_line_definition",
+        "核心原理": "core_principle",
+        "面试高频点": "interview_highlights",
+        "常见易错点": "common_mistakes",
+    }
+    result: dict[str, str] = {"title": title}
+    for cn_title, en_key in section_map.items():
+        result[en_key] = extract_section_content(body, cn_title)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Content directory loaders
 # ---------------------------------------------------------------------------
