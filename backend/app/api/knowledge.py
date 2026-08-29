@@ -1,15 +1,17 @@
-"""Knowledge Read API — Task 3.1.
+"""Knowledge API — Tasks 3.1 & 3.2.
 
 Endpoints:
-    GET /api/v1/knowledge-points        — knowledge point tree
-    GET /api/v1/knowledge-points/{id}   — single knowledge point detail
-    GET /api/v1/knowledge-points/{id}/card — card current version
+    GET  /api/v1/knowledge-points               — knowledge point tree
+    GET  /api/v1/knowledge-points/{id}           — single knowledge point detail
+    GET  /api/v1/knowledge-points/{id}/card      — card current version + progress
+    POST /api/v1/knowledge-cards/{card_id}/view  — record card view
 """
 
 from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.knowledge import (
     KnowledgeCard,
+    KnowledgeCardProgress,
     KnowledgeCardVersion,
     KnowledgePoint,
 )
@@ -25,6 +28,7 @@ from app.db.models.question import Question
 from app.db.session import get_db
 from app.schemas.knowledge import (
     CardContent,
+    CardProgressResponse,
     KnowledgeCardResponse,
     KnowledgePointDetail,
     KnowledgePointTreeNode,
@@ -179,9 +183,103 @@ def get_knowledge_card(knowledge_point_id: str, db: Session = Depends(get_db)):
 
     # 4. Parse content_json
     content_dict = json.loads(version.content_json)
+
+    # 5. Query progress (read-only, no DB write)
+    progress = (
+        db.query(KnowledgeCardProgress)
+        .filter(KnowledgeCardProgress.card_id == card.id)
+        .first()
+    )
+    if progress:
+        progress_data = CardProgressResponse(
+            status=progress.status,
+            view_count=progress.view_count,
+            last_viewed_at=progress.last_viewed_at,
+        )
+    else:
+        progress_data = CardProgressResponse(
+            status="unread",
+            view_count=0,
+            last_viewed_at=None,
+        )
+
     return KnowledgeCardResponse(
         id=card.id,
         knowledge_point_id=card.knowledge_point_id,
         revision=card.current_revision,
         content=CardContent(**content_dict),
+        progress=progress_data,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/knowledge-cards/{card_id}/view
+# ---------------------------------------------------------------------------
+
+@router.post("/knowledge-cards/{card_id}/view", response_model=CardProgressResponse)
+def record_card_view(card_id: str, db: Session = Depends(get_db)):
+    """Record a knowledge card view (upsert progress)."""
+    # 1. Check card exists and is active
+    card = (
+        db.query(KnowledgeCard)
+        .filter(
+            KnowledgeCard.id == card_id,
+            KnowledgeCard.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+    if not card:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CARD_NOT_FOUND", "message": "知识卡片不存在", "details": None},
+        )
+
+    # 2. Check associated knowledge point is active
+    kp = (
+        db.query(KnowledgePoint.id)
+        .filter(
+            KnowledgePoint.id == card.knowledge_point_id,
+            KnowledgePoint.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+    if not kp:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CARD_NOT_FOUND", "message": "知识卡片不存在", "details": None},
+        )
+
+    # 3. Upsert progress
+    now = datetime.now(timezone.utc)
+    progress = (
+        db.query(KnowledgeCardProgress)
+        .filter(KnowledgeCardProgress.card_id == card_id)
+        .first()
+    )
+    if not progress:
+        progress = KnowledgeCardProgress(
+            card_id=card_id,
+            first_viewed_at=now,
+            last_viewed_at=now,
+            view_count=1,
+            status="read",
+        )
+        db.add(progress)
+    else:
+        # Preserve first_viewed_at
+        progress.last_viewed_at = now
+        progress.view_count += 1
+        progress.status = "read"
+
+    try:
+        db.commit()
+        db.refresh(progress)
+    except Exception:
+        db.rollback()
+        raise
+
+    return CardProgressResponse(
+        status=progress.status,
+        view_count=progress.view_count,
+        last_viewed_at=progress.last_viewed_at,
     )

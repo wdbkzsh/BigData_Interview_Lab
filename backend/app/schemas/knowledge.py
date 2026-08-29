@@ -1,7 +1,8 @@
-"""Pydantic response schemas for Knowledge API — Task 3.1."""
+"""Pydantic response schemas for Knowledge API."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -36,6 +37,14 @@ class CardContent(BaseModel):
     common_mistakes: str
 
 
+class CardProgressResponse(BaseModel):
+    """Progress info for a knowledge card."""
+
+    status: str  # "unread" | "read"
+    view_count: int
+    last_viewed_at: Optional[datetime] = None
+
+
 class KnowledgeCardResponse(BaseModel):
     """Response for GET /api/v1/knowledge-points/{id}/card."""
 
@@ -43,3 +52,4 @@ class KnowledgeCardResponse(BaseModel):
     knowledge_point_id: str
     revision: int
     content: CardContent
+    progress: CardProgressResponse

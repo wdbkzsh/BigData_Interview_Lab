@@ -591,3 +591,242 @@ class TestFormalDBNotPolluted:
         # (we can't check content, but we can check it exists and is not empty)
         if p.exists():
             assert p.stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/knowledge-cards/{card_id}/view — record card view
+# ---------------------------------------------------------------------------
+
+class TestRecordCardView:
+    def test_first_view_success(self, tmp_db: Session, content_dir: Path):
+        """First POST creates progress: status=read, view_count=1."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "read"
+        assert data["view_count"] == 1
+        assert data["last_viewed_at"] is not None
+
+    def test_second_view_increments(self, tmp_db: Session, content_dir: Path):
+        """Second POST increments view_count to 2."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+        resp = client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "read"
+        assert data["view_count"] == 2
+
+    def test_first_viewed_at_preserved(self, tmp_db: Session, content_dir: Path):
+        """Second POST preserves first_viewed_at."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        from app.db.models.knowledge import KnowledgeCardProgress
+
+        client = _make_client(tmp_db)
+        client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+
+        # Read first_viewed_at from DB
+        prog1 = tmp_db.query(KnowledgeCardProgress).filter(
+            KnowledgeCardProgress.card_id == "card.spark.shuffle"
+        ).first()
+        first_ts = prog1.first_viewed_at
+
+        client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+
+        prog2 = tmp_db.query(KnowledgeCardProgress).filter(
+            KnowledgeCardProgress.card_id == "card.spark.shuffle"
+        ).first()
+        assert prog2.first_viewed_at == first_ts
+
+    def test_last_viewed_at_updated(self, tmp_db: Session, content_dir: Path):
+        """Second POST updates last_viewed_at (not earlier than first)."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp1 = client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+        resp2 = client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+
+        last1 = resp1.json()["last_viewed_at"]
+        last2 = resp2.json()["last_viewed_at"]
+        # last2 should not be earlier than last1
+        assert last2 >= last1
+
+    def test_card_not_found(self, tmp_db: Session, content_dir: Path):
+        """POST nonexistent card_id → 404."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post("/api/v1/knowledge-cards/nonexistent/view")
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "CARD_NOT_FOUND"
+
+    def test_inactive_card(self, tmp_db: Session, content_dir: Path):
+        """POST inactive card → 404."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        from app.db.models.knowledge import KnowledgeCard
+        card = tmp_db.query(KnowledgeCard).filter(KnowledgeCard.id == "card.spark.shuffle").first()
+        card.is_active = False
+        tmp_db.commit()
+
+        client = _make_client(tmp_db)
+        resp = client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "CARD_NOT_FOUND"
+
+    def test_inactive_knowledge_point(self, tmp_db: Session, content_dir: Path):
+        """Card active but KP inactive → 404."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        from app.db.models.knowledge import KnowledgePoint
+        kp = tmp_db.query(KnowledgePoint).filter(KnowledgePoint.id == "spark.shuffle").first()
+        kp.is_active = False
+        tmp_db.commit()
+
+        client = _make_client(tmp_db)
+        resp = client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "CARD_NOT_FOUND"
+
+    def test_no_request_body_required(self, tmp_db: Session, content_dir: Path):
+        """POST with no body succeeds."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+        assert resp.status_code == 200
+        assert resp.json()["view_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# GET Card progress — before/after view
+# ---------------------------------------------------------------------------
+
+class TestGetCardProgress:
+    def test_get_card_before_view(self, tmp_db: Session, content_dir: Path):
+        """GET card before any POST view → unread, 0, null."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.get("/api/v1/knowledge-points/spark.shuffle/card")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["progress"]["status"] == "unread"
+        assert data["progress"]["view_count"] == 0
+        assert data["progress"]["last_viewed_at"] is None
+
+    def test_get_before_view_no_db_write(self, tmp_db: Session, content_dir: Path):
+        """GET card before view does NOT create a progress row."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        from app.db.models.knowledge import KnowledgeCardProgress
+
+        client = _make_client(tmp_db)
+        # GET card — should not insert
+        resp = client.get("/api/v1/knowledge-points/spark.shuffle/card")
+        assert resp.status_code == 200
+        assert resp.json()["progress"]["status"] == "unread"
+
+        # Verify no progress row in DB
+        count = tmp_db.query(KnowledgeCardProgress).filter(
+            KnowledgeCardProgress.card_id == "card.spark.shuffle"
+        ).count()
+        assert count == 0
+
+    def test_get_card_after_view(self, tmp_db: Session, content_dir: Path):
+        """POST view then GET card → read, correct count."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        # View once
+        client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+
+        resp = client.get("/api/v1/knowledge-points/spark.shuffle/card")
+        data = resp.json()
+        assert data["progress"]["status"] == "read"
+        assert data["progress"]["view_count"] == 1
+        assert data["progress"]["last_viewed_at"] is not None
+
+    def test_get_repeated_does_not_increment(self, tmp_db: Session, content_dir: Path):
+        """GET card multiple times does not increase view_count."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        # View once to create progress
+        client.post("/api/v1/knowledge-cards/card.spark.shuffle/view")
+
+        # GET 10 times
+        for _ in range(10):
+            client.get("/api/v1/knowledge-points/spark.shuffle/card")
+
+        # view_count should still be 1
+        resp = client.get("/api/v1/knowledge-points/spark.shuffle/card")
+        assert resp.json()["progress"]["view_count"] == 1
+
+    def test_task31_card_fields_preserved(self, tmp_db: Session, content_dir: Path):
+        """Task 3.1 card response fields (id, revision, content) unchanged."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.get("/api/v1/knowledge-points/spark.shuffle/card")
+        data = resp.json()
+        assert data["id"] == "card.spark.shuffle"
+        assert data["knowledge_point_id"] == "spark.shuffle"
+        assert data["revision"] == 1
+        assert data["content"]["title"] == "Shuffle"
+
+
+# ---------------------------------------------------------------------------
+# CORS preflight for POST view
+# ---------------------------------------------------------------------------
+
+class TestCORSPreflight:
+    def test_post_view_preflight_allows_post(self, tmp_db: Session, content_dir: Path):
+        """OPTIONS preflight for POST view should allow POST method."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.options(
+            "/api/v1/knowledge-cards/card.spark.shuffle/view",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        # FastAPI CORS middleware responds to preflight
+        allow_methods = resp.headers.get("access-control-allow-methods", "")
+        assert "POST" in allow_methods
+
+    def test_get_preflight_allows_get(self, tmp_db: Session, content_dir: Path):
+        """OPTIONS preflight for GET knowledge-points should allow GET."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.options(
+            "/api/v1/knowledge-points",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        allow_methods = resp.headers.get("access-control-allow-methods", "")
+        assert "GET" in allow_methods
