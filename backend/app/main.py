@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.knowledge import router as knowledge_router
+
 app = FastAPI()
 
 app.add_middleware(
@@ -11,6 +13,8 @@ app.add_middleware(
     ],
     allow_methods=["GET"],
 )
+
+app.include_router(knowledge_router)
 
 
 @app.get("/health")
