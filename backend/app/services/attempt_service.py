@@ -1,8 +1,8 @@
-"""Attempt service — Task 5.1 + Phase 5 self-assessment.
+"""Attempt service — Phase 6.
 
 Handles attempt creation, answer saving, choice auto-grading,
 client_request_id idempotency, question_revision version binding,
-feedback for Choice / Short Answer, and self-assessment with ReviewState.
+feedback for Choice / Short Answer, self-assessment, and Choice→ReviewState.
 Does NOT handle Wrong Book, DailyTask, or AI grading.
 """
 
@@ -111,6 +111,51 @@ def create_attempt(
     )
     db.add(attempt)
 
+    # 6. Choice: apply score-based ReviewState in same transaction
+    if q.question_type == "choice" and score is not None and max_score is not None:
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+        from app.core.config import settings
+        from app.review.policy import apply_score_based
+        from app.services.review_service import get_review_state, upsert_review_state
+
+        tz = ZoneInfo(settings.APP_TIMEZONE)
+        business_today = datetime.now(tz).date()
+
+        current_rs = get_review_state(db, q.id)
+        current_mastery = current_rs["mastery_state"] if current_rs else None
+        current_consecutive = current_rs["consecutive_successes"] if current_rs else 0
+        current_algo_json = None
+        if current_rs and current_rs.get("policy_version"):
+            # Re-read raw algorithm_state_json from DB
+            from app.db.models.review import ReviewState as RSModel
+            rs_row = db.query(RSModel.algorithm_state_json).filter(
+                RSModel.question_id == q.id
+            ).first()
+            current_algo_json = rs_row[0] if rs_row else None
+
+        policy_result = apply_score_based(
+            final_score=score,
+            max_score=max_score,
+            business_today=business_today,
+            current_mastery_state=current_mastery,
+            current_consecutive_successes=current_consecutive,
+            current_algorithm_state_json=current_algo_json,
+        )
+
+        upsert_review_state(
+            db,
+            question_id=q.id,
+            mastery_state=policy_result.mastery_state,
+            review_stage=policy_result.review_stage,
+            next_review_date=policy_result.next_review_date,
+            consecutive_successes=policy_result.consecutive_successes,
+            policy_version=policy_result.policy_version,
+            algorithm_state_json=policy_result.algorithm_state_json,
+            last_attempt_id=None,  # Will be set after commit
+            increment_review_count=(attempt_type == "review"),
+        )
+
     try:
         db.commit()
         db.refresh(attempt)
@@ -124,6 +169,17 @@ def create_attempt(
         if existing:
             return _build_response_from_existing(db, existing)
         raise
+
+    # 7. Post-commit: set last_attempt_id and review_applied_at for Choice
+    if q.question_type == "choice" and score is not None:
+        from datetime import datetime, timezone
+        from app.db.models.review import ReviewState as RSModel
+        rs_row = db.query(RSModel).filter(RSModel.question_id == q.id).first()
+        if rs_row:
+            rs_row.last_attempt_id = attempt.id
+            attempt.review_applied_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(attempt)
 
     return _build_new_response(
         attempt,
