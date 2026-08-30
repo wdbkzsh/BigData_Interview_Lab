@@ -417,3 +417,70 @@ class InvalidSelfAssessmentError(Exception):
 
 class SelfAssessmentConflictError(Exception):
     """Attempt already completed with a different mastery_state."""
+
+
+# ---------------------------------------------------------------------------
+# Attempt detail / pending (recovery)
+# ---------------------------------------------------------------------------
+
+def get_attempt_detail(db: Session, attempt_id: int) -> Optional[dict[str, Any]]:
+    """Get attempt detail with reference_answer/explanation for awaiting SA."""
+    attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+    if not attempt:
+        return None
+
+    result: dict[str, Any] = {
+        "id": attempt.id,
+        "question_id": attempt.question_id,
+        "question_revision": attempt.question_revision,
+        "attempt_type": attempt.attempt_type,
+        "status": attempt.status,
+        "answer": attempt.user_answer,
+        "self_assessed_mastery_state": attempt.self_assessed_mastery_state,
+    }
+
+    # For awaiting self-assessment, include reference_answer/explanation
+    if attempt.status == "awaiting_self_assessment":
+        from app.db.models.question import Question, QuestionVersion
+
+        q = (
+            db.query(Question.question_type)
+            .filter(Question.id == attempt.question_id)
+            .first()
+        )
+        if q and q.question_type == "short_answer":
+            version = (
+                db.query(QuestionVersion)
+                .filter(
+                    QuestionVersion.question_id == attempt.question_id,
+                    QuestionVersion.revision == attempt.question_revision,
+                )
+                .first()
+            )
+            if version:
+                payload = json.loads(version.payload_json)
+                result["reference_answer"] = payload.get("reference_answer")
+                result["explanation"] = payload.get("explanation")
+
+    return result
+
+
+def get_pending_attempts(db: Session) -> dict[str, list[dict[str, Any]]]:
+    """Get all attempts awaiting self-assessment."""
+    rows = (
+        db.query(Attempt)
+        .filter(Attempt.status == "awaiting_self_assessment")
+        .order_by(Attempt.created_at.asc())
+        .all()
+    )
+
+    items = [
+        {
+            "attempt_id": r.id,
+            "question_id": r.question_id,
+            "created_at": str(r.created_at) if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+    return {"short_answer_self_assessment": items}

@@ -58,3 +58,35 @@ class SelfAssessmentResponse(BaseModel):
     status: str
     self_assessed_mastery_state: str
     review_state: ReviewStateSnapshot
+
+
+# ---------------------------------------------------------------------------
+# Attempt detail / pending (recovery)
+# ---------------------------------------------------------------------------
+
+class AttemptDetailResponse(BaseModel):
+    """Response for GET /api/v1/attempts/{id}."""
+
+    id: int
+    question_id: str
+    question_revision: int
+    attempt_type: str
+    status: str
+    answer: str
+    self_assessed_mastery_state: Optional[str] = None
+    reference_answer: Optional[str] = None
+    explanation: Optional[str] = None
+
+
+class PendingAttemptItem(BaseModel):
+    """A single pending attempt for recovery."""
+
+    attempt_id: int
+    question_id: str
+    created_at: Optional[str] = None
+
+
+class PendingAttemptsResponse(BaseModel):
+    """Response for GET /api/v1/attempts/pending."""
+
+    short_answer_self_assessment: list[PendingAttemptItem]

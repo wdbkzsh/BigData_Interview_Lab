@@ -13,8 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.attempt import (
+    AttemptDetailResponse,
     AttemptSubmitRequest,
     AttemptSubmitResponse,
+    PendingAttemptsResponse,
     ReviewStateSnapshot,
     SelfAssessmentRequest,
     SelfAssessmentResponse,
@@ -26,6 +28,8 @@ from app.services.attempt_service import (
     QuestionNotFoundError,
     SelfAssessmentConflictError,
     create_attempt,
+    get_attempt_detail,
+    get_pending_attempts,
     submit_self_assessment,
 )
 
@@ -171,3 +175,34 @@ def self_assessment(
         return response
 
     return JSONResponse(status_code=201, content=response.model_dump(mode="json"))
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/attempts/{attempt_id} — attempt detail
+# ---------------------------------------------------------------------------
+
+@router.get("/attempts/{attempt_id}", response_model=AttemptDetailResponse)
+def get_attempt(attempt_id: int, db: Session = Depends(get_db)):
+    """Get attempt detail. For awaiting SA, includes reference_answer."""
+    detail = get_attempt_detail(db, attempt_id)
+    if detail is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "ATTEMPT_NOT_FOUND",
+                "message": "Attempt 不存在",
+                "details": None,
+            },
+        )
+    return AttemptDetailResponse(**detail)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/attempts/pending — pending self-assessments
+# ---------------------------------------------------------------------------
+
+@router.get("/attempts/pending", response_model=PendingAttemptsResponse)
+def list_pending(db: Session = Depends(get_db)):
+    """List all attempts awaiting self-assessment."""
+    result = get_pending_attempts(db)
+    return PendingAttemptsResponse(**result)
