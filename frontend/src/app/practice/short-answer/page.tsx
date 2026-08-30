@@ -2,8 +2,8 @@
 
 import { Suspense, useState, useEffect, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { fetchQuestions, fetchPendingAttempts } from "@/lib/api"
-import type { QuestionListItem } from "@/lib/types"
+import { fetchQuestions, fetchDomains, fetchPendingAttempts } from "@/lib/api"
+import type { QuestionListItem, Domain } from "@/lib/types"
 import ShortAnswerQuestion from "@/components/practice/ShortAnswerQuestion"
 import QuestionBank from "@/components/practice/QuestionBank"
 import styles from "./page.module.css"
@@ -14,39 +14,49 @@ function ShortAnswerPracticeContent() {
   const questionId = searchParams.get("id")
 
   const [questions, setQuestions] = useState<QuestionListItem[]>([])
+  const [domains, setDomains] = useState<Domain[]>([])
+  const [selectedDomain, setSelectedDomain] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pendingAttemptId, setPendingAttemptId] = useState<number | null>(null)
 
-  // Load question bank and check pending
+  // Load domains on mount
   useEffect(() => {
-    const init = async () => {
-      try {
-        const [data, pending] = await Promise.all([
-          fetchQuestions({ question_type: "short_answer", page: 1, page_size: 50 }),
-          fetchPendingAttempts(),
-        ])
-        setQuestions(data.items)
+    fetchDomains()
+      .then((data) => setDomains(data))
+      .catch(() => {})
+  }, [])
 
-        // If we have a questionId and there's a pending attempt for it, recover
-        if (questionId) {
-          const match = pending.short_answer_self_assessment.find(
-            (p) => p.question_id === questionId
-          )
-          if (match) {
-            setPendingAttemptId(match.attempt_id)
-          }
+  // Load question bank when domain changes (not when viewing a question)
+  useEffect(() => {
+    if (questionId) return
+    setLoading(true)
+    fetchQuestions({
+      question_type: "short_answer",
+      domain_id: selectedDomain || undefined,
+      page: 1,
+      page_size: 50,
+    })
+      .then((data) => setQuestions(data.items))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [selectedDomain, questionId])
+
+  // Check for pending recovery when viewing a specific question
+  useEffect(() => {
+    if (!questionId) return
+    fetchPendingAttempts()
+      .then((pending) => {
+        const match = pending.short_answer_self_assessment.find(
+          (p) => p.question_id === questionId
+        )
+        if (match) {
+          setPendingAttemptId(match.attempt_id)
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "加载失败")
-      } finally {
-        setLoading(false)
-      }
-    }
-    init()
+      })
+      .catch(() => {})
   }, [questionId])
 
-  // Handle "next question"
   const handleDone = useCallback(() => {
     setPendingAttemptId(null)
     const idx = questions.findIndex((q) => q.id === questionId)
@@ -58,14 +68,13 @@ function ShortAnswerPracticeContent() {
     }
   }, [questions, questionId, router])
 
-  // Handle "return to bank"
   const handleBackToBank = useCallback(() => {
     router.push("/practice/short-answer")
   }, [router])
 
   // --- Render ---
 
-  if (loading) {
+  if (loading && !questionId) {
     return (
       <div className={styles.page}>
         <header className={styles.header}>
@@ -94,6 +103,30 @@ function ShortAnswerPracticeContent() {
         <header className={styles.header}>
           <h1 className={styles.title}>问答题题库</h1>
         </header>
+
+        {/* Domain filter */}
+        {domains.length > 0 && (
+          <div className={styles.domainFilter}>
+            <button
+              className={`${styles.domainButton} ${selectedDomain === "" ? styles.domainActive : ""}`}
+              onClick={() => setSelectedDomain("")}
+              type="button"
+            >
+              全部
+            </button>
+            {domains.map((d) => (
+              <button
+                key={d.id}
+                className={`${styles.domainButton} ${selectedDomain === d.id ? styles.domainActive : ""}`}
+                onClick={() => setSelectedDomain(d.id)}
+                type="button"
+              >
+                {d.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className={styles.content}>
           <QuestionBank items={questions} basePath="/practice/short-answer" />
         </div>
@@ -101,7 +134,7 @@ function ShortAnswerPracticeContent() {
     )
   }
 
-  // Has questionId → show question (with possible pending recovery)
+  // Has questionId → show question
   return (
     <div className={styles.page}>
       <header className={styles.header}>

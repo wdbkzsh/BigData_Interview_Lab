@@ -75,3 +75,33 @@
   flex: 1;
   padding: 20px 24px;
 }
+
+.domainFilter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.domainButton {
+  padding: 5px 14px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 16px;
+  background: transparent;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.domainButton:hover {
+  border-color: rgba(128, 128, 128, 0.5);
+}
+
+.domainActive {
+  background: rgba(0, 112, 243, 0.1);
+  border-color: rgba(0, 112, 243, 0.3);
+  color: #0070f3;
+  font-weight: 500;
+}

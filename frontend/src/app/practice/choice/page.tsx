@@ -2,8 +2,8 @@
 
 import { Suspense, useState, useEffect, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { fetchQuestions } from "@/lib/api"
-import type { QuestionListItem } from "@/lib/types"
+import { fetchQuestions, fetchDomains } from "@/lib/api"
+import type { QuestionListItem, Domain } from "@/lib/types"
 import ChoiceQuestion from "@/components/practice/ChoiceQuestion"
 import QuestionBank from "@/components/practice/QuestionBank"
 import styles from "./page.module.css"
@@ -14,47 +14,51 @@ function ChoicePracticeContent() {
   const questionId = searchParams.get("id")
 
   const [questions, setQuestions] = useState<QuestionListItem[]>([])
+  const [domains, setDomains] = useState<Domain[]>([])
+  const [selectedDomain, setSelectedDomain] = useState<string>("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [bankLoaded, setBankLoaded] = useState(false)
 
-  // Load question bank
-  const loadBank = useCallback(() => {
-    setLoading(true)
-    fetchQuestions({ question_type: "choice", page: 1, page_size: 50 })
-      .then((data) => {
-        setQuestions(data.items)
-        setBankLoaded(true)
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false))
+  // Load domains on mount
+  useEffect(() => {
+    fetchDomains()
+      .then((data) => setDomains(data))
+      .catch(() => {})
   }, [])
 
+  // Load question bank when domain changes
   useEffect(() => {
-    loadBank()
-  }, [loadBank])
+    if (questionId) return // Don't reload bank when viewing a question
+    setLoading(true)
+    fetchQuestions({
+      question_type: "choice",
+      domain_id: selectedDomain || undefined,
+      page: 1,
+      page_size: 50,
+    })
+      .then((data) => setQuestions(data.items))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [selectedDomain, questionId])
 
-  // Handle "next question" from within the question
+  // Handle "next question"
   const handleDone = useCallback(() => {
-    // Find current index and go to next
     const idx = questions.findIndex((q) => q.id === questionId)
     const nextIdx = idx + 1
     if (nextIdx < questions.length) {
       router.push(`/practice/choice?id=${questions[nextIdx].id}`)
     } else {
-      // Last question — return to bank
       router.push("/practice/choice")
     }
   }, [questions, questionId, router])
 
-  // Handle "return to bank"
   const handleBackToBank = useCallback(() => {
     router.push("/practice/choice")
   }, [router])
 
   // --- Render ---
 
-  if (loading) {
+  if (loading && !questionId) {
     return (
       <div className={styles.page}>
         <header className={styles.header}>
@@ -83,6 +87,30 @@ function ChoicePracticeContent() {
         <header className={styles.header}>
           <h1 className={styles.title}>选择题题库</h1>
         </header>
+
+        {/* Domain filter */}
+        {domains.length > 0 && (
+          <div className={styles.domainFilter}>
+            <button
+              className={`${styles.domainButton} ${selectedDomain === "" ? styles.domainActive : ""}`}
+              onClick={() => setSelectedDomain("")}
+              type="button"
+            >
+              全部
+            </button>
+            {domains.map((d) => (
+              <button
+                key={d.id}
+                className={`${styles.domainButton} ${selectedDomain === d.id ? styles.domainActive : ""}`}
+                onClick={() => setSelectedDomain(d.id)}
+                type="button"
+              >
+                {d.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className={styles.content}>
           <QuestionBank items={questions} basePath="/practice/choice" />
         </div>

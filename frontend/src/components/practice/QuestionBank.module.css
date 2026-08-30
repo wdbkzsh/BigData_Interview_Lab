@@ -1,21 +1,59 @@
-.list {
+.groupedList {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 24px;
+}
+
+.domainGroup {
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.domainTitle {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 12px 16px;
+  background: rgba(128, 128, 128, 0.05);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+  margin: 0;
+}
+
+.kpGroup {
+  padding: 0 16px;
+}
+
+.kpGroup:not(:last-child) {
+  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+}
+
+.kpTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary, #666);
+  padding: 10px 0 6px;
+  margin: 0;
+}
+
+.questionList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 10px;
 }
 
 .item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 16px;
-  border: 1px solid rgba(128, 128, 128, 0.15);
-  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.1);
+  border-radius: 6px;
   transition: border-color 0.15s;
 }
 
 .item:hover {
-  border-color: rgba(128, 128, 128, 0.35);
+  border-color: rgba(128, 128, 128, 0.3);
 }
 
 .itemLeft {
@@ -24,9 +62,9 @@
 }
 
 .itemTitle {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -35,16 +73,16 @@
 .itemMeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  font-size: 13px;
+  gap: 10px;
+  font-size: 12px;
   color: var(--text-secondary, #999);
 }
 
 .status {
   display: inline-block;
-  padding: 1px 8px;
+  padding: 1px 6px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -79,23 +117,23 @@
 }
 
 .nextReview {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary, #bbb);
 }
 
 .actionButton {
-  padding: 6px 16px;
+  padding: 5px 14px;
   border: 1px solid rgba(128, 128, 128, 0.3);
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
-  font-size: 13px;
+  font-size: 12px;
   font-family: inherit;
   cursor: pointer;
   text-decoration: none;
   color: inherit;
   transition: background 0.15s;
   flex-shrink: 0;
-  margin-left: 12px;
+  margin-left: 10px;
 }
 
 .actionButton:hover {

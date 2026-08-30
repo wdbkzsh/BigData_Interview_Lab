@@ -1,8 +1,9 @@
-"""Question API — Phase 6.5.
+"""Question API — Phase 7.
 
 Endpoints:
-    GET /api/v1/questions       — question list with filters + ReviewState
+    GET /api/v1/questions       — question list with filters + ReviewState + domain
     GET /api/v1/questions/{id}  — single question detail (answer hidden)
+    GET /api/v1/domains         — list all domains (root KnowledgePoints)
 """
 
 from __future__ import annotations
@@ -21,9 +22,23 @@ from app.schemas.question import (
     QuestionListResponse,
     ReviewStateSummary,
 )
-from app.services.question_service import get_question_detail, list_questions
+from app.services.question_service import (
+    get_question_detail,
+    list_domains,
+    list_questions,
+)
 
 router = APIRouter(prefix="/api/v1")
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/domains — list domains
+# ---------------------------------------------------------------------------
+
+@router.get("/domains")
+def get_domains(db: Session = Depends(get_db)):
+    """List all domains (root KnowledgePoints)."""
+    return list_domains(db)
 
 
 # ---------------------------------------------------------------------------
@@ -36,17 +51,19 @@ def get_questions(
     question_type: Optional[str] = None,
     difficulty: Optional[int] = None,
     mastery_state: Optional[str] = None,
+    domain_id: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
 ):
-    """Return a filtered, paginated list of questions with ReviewState."""
+    """Return a filtered, paginated list of questions with ReviewState and domain."""
     result = list_questions(
         db,
         knowledge_point_id=knowledge_point_id,
         question_type=question_type,
         difficulty=difficulty,
         mastery_state=mastery_state,
+        domain_id=domain_id,
         page=page,
         page_size=page_size,
     )
@@ -54,6 +71,7 @@ def get_questions(
     items = []
     for item in result["items"]:
         rs = item.get("review_state")
+        domain = item.get("domain")
         items.append(QuestionListItem(
             id=item["id"],
             title=item["title"],
@@ -63,6 +81,10 @@ def get_questions(
                 id=item["primary_knowledge_point"]["id"],
                 name=item["primary_knowledge_point"]["name"],
             ),
+            domain=KnowledgePointRef(
+                id=domain["id"],
+                name=domain["name"],
+            ) if domain else None,
             review_state=ReviewStateSummary(
                 mastery_state=rs["mastery_state"],
                 next_review_date=rs["next_review_date"],

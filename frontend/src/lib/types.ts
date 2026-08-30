@@ -56,6 +56,7 @@ export interface QuestionListItem {
   question_type: string
   difficulty: number
   primary_knowledge_point: KnowledgePointRef
+  domain: KnowledgePointRef | null
   review_state: ReviewStateSummary | null
   pending_self_assessment_attempt_id: number | null
 }
@@ -206,4 +207,13 @@ export interface WrongBookResponse {
 
 export interface WrongBookPreferenceBody {
   mode: "auto" | "follow" | "ignore"
+}
+
+// ---------------------------------------------------------------------------
+// Domains
+// ---------------------------------------------------------------------------
+
+export interface Domain {
+  id: string
+  name: string
 }

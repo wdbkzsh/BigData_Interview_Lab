@@ -15,7 +15,7 @@ from app.services.question_service import get_question_detail, list_questions
 # Content fixtures
 # ---------------------------------------------------------------------------
 
-_KNOWLEDGE_YAML = """\
+_KNOWLEDGE_SPARK_YAML = """\
 - id: spark
   name: Spark
   description: Apache Spark
@@ -29,6 +29,18 @@ _KNOWLEDGE_YAML = """\
       name: RDD
       description: Resilient Distributed Dataset
       sort_order: 2
+"""
+
+_KNOWLEDGE_HIVE_YAML = """\
+- id: hive
+  name: Hive
+  description: SQL-on-Hadoop
+  sort_order: 2
+  children:
+    - id: hive.partition
+      name: Partition
+      description: Hive partitioning
+      sort_order: 1
 """
 
 _CARD_SPARK_SHUFFLE = """\
@@ -157,20 +169,72 @@ reference_answer: 不可变、可分区、可并行操作。
 explanation: RDD 是 Spark 的基本数据抽象。
 """
 
+_HIVE_CHOICE_001 = """\
+id: hive.partition.choice.001
+question_type: choice
+primary_knowledge_point_id: hive.partition
+title: Hive 分区优势
+difficulty: 2
+tags: [hive]
+related_knowledge_points: []
+is_active: true
+
+content: Hive 分区的主要优势是什么？
+
+options:
+  - key: A
+    text: 减少存储
+  - key: B
+    text: 减少扫描量
+  - key: C
+    text: 提高写入速度
+
+correct_answer: B
+
+explanation: 分区可以只扫描相关数据。
+"""
+
+_CARD_HIVE_PARTITION = """\
+---
+knowledge_point_id: hive.partition
+title: Partition
+is_active: true
+---
+
+## 一句话定义
+
+Hive 分区。
+
+## 核心原理
+
+按分区键分散数据。
+
+## 面试高频点
+
+- 分区裁剪
+
+## 常见易错点
+
+- 分区字段不是表列
+"""
+
 
 def _write_content(content_dir: Path) -> None:
     kp_dir = content_dir / "knowledge"
     kp_dir.mkdir(parents=True)
-    (kp_dir / "spark.yaml").write_text(_KNOWLEDGE_YAML, encoding="utf-8")
+    (kp_dir / "spark.yaml").write_text(_KNOWLEDGE_SPARK_YAML, encoding="utf-8")
+    (kp_dir / "hive.yaml").write_text(_KNOWLEDGE_HIVE_YAML, encoding="utf-8")
 
     card_dir = content_dir / "cards"
     card_dir.mkdir(parents=True)
     (card_dir / "spark.shuffle.md").write_text(_CARD_SPARK_SHUFFLE, encoding="utf-8")
+    (card_dir / "hive.partition.md").write_text(_CARD_HIVE_PARTITION, encoding="utf-8")
 
     choice_dir = content_dir / "questions" / "choice"
     choice_dir.mkdir(parents=True)
     (choice_dir / "spark.shuffle.choice.001.yaml").write_text(_CHOICE_001, encoding="utf-8")
     (choice_dir / "spark.shuffle.choice.002.yaml").write_text(_CHOICE_002, encoding="utf-8")
+    (choice_dir / "hive.partition.choice.001.yaml").write_text(_HIVE_CHOICE_001, encoding="utf-8")
 
     qa_dir = content_dir / "questions" / "short_answer"
     qa_dir.mkdir(parents=True)
@@ -201,7 +265,7 @@ class TestListQuestions:
         import_content(content_dir, tmp_db)
 
         result = list_questions(tmp_db, question_type="choice")
-        assert result["total"] == 2
+        assert result["total"] == 3  # 2 spark choice + 1 hive choice
         for item in result["items"]:
             assert item["question_type"] == "choice"
 
@@ -225,7 +289,7 @@ class TestListQuestions:
         import_content(content_dir, tmp_db)
 
         result = list_questions(tmp_db, difficulty=2)
-        assert result["total"] == 2  # choice.001 + qa.001
+        assert result["total"] == 3  # choice.001 + qa.001 + hive.choice.001
         for item in result["items"]:
             assert item["difficulty"] == 2
 
@@ -246,11 +310,11 @@ class TestListQuestions:
         _write_content(content_dir)
         import_content(content_dir, tmp_db)
 
-        # Total = 5 questions
+        # Total = 6 questions
         result = list_questions(tmp_db, page=1, page_size=2)
         assert result["page"] == 1
         assert result["page_size"] == 2
-        assert result["total"] == 5
+        assert result["total"] == 6
         assert len(result["items"]) == 2
 
         result2 = list_questions(tmp_db, page=2, page_size=2)
@@ -259,7 +323,7 @@ class TestListQuestions:
 
         result3 = list_questions(tmp_db, page=3, page_size=2)
         assert result3["page"] == 3
-        assert len(result3["items"]) == 1
+        assert len(result3["items"]) == 2
 
     def test_empty_result(self, tmp_db: Session, content_dir: Path):
         _write_content(content_dir)
@@ -278,8 +342,10 @@ class TestListQuestions:
         tmp_db.commit()
 
         result = list_questions(tmp_db, question_type="choice")
-        assert result["total"] == 1
-        assert result["items"][0]["id"] == "spark.shuffle.choice.002"
+        assert result["total"] == 2  # spark.choice.002 + hive.choice.001
+        ids = [item["id"] for item in result["items"]]
+        assert "spark.shuffle.choice.002" in ids
+        assert "hive.partition.choice.001" in ids
 
     def test_sort_order(self, tmp_db: Session, content_dir: Path):
         """Results sorted by difficulty ASC, id ASC."""
@@ -404,8 +470,121 @@ class TestGetQuestionDetail:
 
 
 # ---------------------------------------------------------------------------
-# Formal DB not polluted
+# Domain tests
 # ---------------------------------------------------------------------------
+
+class TestDomain:
+    def test_domain_field_present(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        result = list_questions(tmp_db)
+        item = result["items"][0]
+        assert "domain" in item
+        assert "id" in item["domain"]
+        assert "name" in item["domain"]
+
+    def test_spark_shuffle_domain_is_spark(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        result = list_questions(tmp_db, knowledge_point_id="spark.shuffle")
+        for item in result["items"]:
+            assert item["domain"]["id"] == "spark"
+            assert item["domain"]["name"] == "Spark"
+
+    def test_hive_partition_domain_is_hive(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        result = list_questions(tmp_db, knowledge_point_id="hive.partition")
+        for item in result["items"]:
+            assert item["domain"]["id"] == "hive"
+            assert item["domain"]["name"] == "Hive"
+
+    def test_domain_id_filter_spark(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        result = list_questions(tmp_db, domain_id="spark")
+        assert result["total"] > 0
+        for item in result["items"]:
+            assert item["domain"]["id"] == "spark"
+
+    def test_domain_id_filter_hive(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        result = list_questions(tmp_db, domain_id="hive")
+        assert result["total"] > 0
+        for item in result["items"]:
+            assert item["domain"]["id"] == "hive"
+
+    def test_domain_id_no_cross_contamination(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        spark_result = list_questions(tmp_db, domain_id="spark")
+        hive_result = list_questions(tmp_db, domain_id="hive")
+
+        spark_ids = {item["id"] for item in spark_result["items"]}
+        hive_ids = {item["id"] for item in hive_result["items"]}
+
+        # No overlap
+        assert len(spark_ids & hive_ids) == 0
+
+    def test_domain_id_with_question_type(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        result = list_questions(tmp_db, domain_id="spark", question_type="choice")
+        assert result["total"] > 0
+        for item in result["items"]:
+            assert item["domain"]["id"] == "spark"
+            assert item["question_type"] == "choice"
+
+    def test_domain_id_with_mastery_state(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        result = list_questions(tmp_db, domain_id="spark", mastery_state="not_started")
+        for item in result["items"]:
+            assert item["domain"]["id"] == "spark"
+            assert item["review_state"] is None
+
+    def test_list_domains(self, tmp_db: Session, content_dir: Path):
+        from app.services.question_service import list_domains
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        domains = list_domains(tmp_db)
+        ids = [d["id"] for d in domains]
+        assert "spark" in ids
+        assert "hive" in ids
+
+    def test_root_kp_domain_self(self, tmp_db: Session, content_dir: Path):
+        """Root KP's domain should be itself."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        # Add a question directly under spark (root)
+        from app.db.models.question import Question
+        q = Question(
+            id="spark.root.q.001",
+            question_type="choice",
+            primary_knowledge_point_id="spark",
+            title="Root question",
+            difficulty=1,
+            current_revision=1,
+            is_active=True,
+        )
+        tmp_db.add(q)
+        tmp_db.commit()
+
+        result = list_questions(tmp_db, knowledge_point_id="spark")
+        root_items = [i for i in result["items"] if i["id"] == "spark.root.q.001"]
+        assert len(root_items) == 1
+        assert root_items[0]["domain"]["id"] == "spark"
 
 class TestFormalDBNotPolluted:
     def test_formal_db_unchanged(self):

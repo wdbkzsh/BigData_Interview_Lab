@@ -30,6 +30,7 @@ class QuestionListItem(BaseModel):
     question_type: str
     difficulty: int
     primary_knowledge_point: KnowledgePointRef
+    domain: Optional[KnowledgePointRef] = None
     review_state: Optional[ReviewStateSummary] = None
     pending_self_assessment_attempt_id: Optional[int] = None
 

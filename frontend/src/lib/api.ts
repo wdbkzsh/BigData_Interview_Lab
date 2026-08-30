@@ -69,6 +69,15 @@ export async function recordCardView(
 }
 
 // ---------------------------------------------------------------------------
+// Domains
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/domains */
+export async function fetchDomains(): Promise<{ id: string; name: string }[]> {
+  return apiFetch<{ id: string; name: string }[]>("/api/v1/domains")
+}
+
+// ---------------------------------------------------------------------------
 // Question
 // ---------------------------------------------------------------------------
 
@@ -76,12 +85,14 @@ export async function recordCardView(
 export async function fetchQuestions(params: {
   question_type?: string
   mastery_state?: string
+  domain_id?: string
   page?: number
   page_size?: number
 }): Promise<QuestionListResponse> {
   const searchParams = new URLSearchParams()
   if (params.question_type) searchParams.set("question_type", params.question_type)
   if (params.mastery_state) searchParams.set("mastery_state", params.mastery_state)
+  if (params.domain_id) searchParams.set("domain_id", params.domain_id)
   if (params.page) searchParams.set("page", String(params.page))
   if (params.page_size) searchParams.set("page_size", String(params.page_size))
   const qs = searchParams.toString()
