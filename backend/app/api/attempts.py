@@ -28,9 +28,11 @@ def _build_submit_response(result: dict) -> AttemptSubmitResponse:
         question_id=result["question_id"],
         question_revision=result["question_revision"],
         answer=result["answer"],
-        is_correct=result["is_correct"],
-        score=result["score"],
+        status=result["status"],
+        is_correct=result.get("is_correct"),
+        score=result.get("score"),
         correct_answer=result.get("correct_answer"),
+        reference_answer=result.get("reference_answer"),
         explanation=result.get("explanation"),
     )
 

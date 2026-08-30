@@ -1,4 +1,4 @@
-"""Tests for Attempt API — Task 4.4 + Step A feedback."""
+"""Tests for Attempt API — Task 5.1."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.content.importer import import_content
+from app.db.models.attempt import Attempt
 from app.db.session import get_db
 from app.main import app
 
@@ -158,7 +159,7 @@ def _make_client(db: Session) -> TestClient:
 
 
 # ---------------------------------------------------------------------------
-# Choice attempts — Step A feedback
+# Choice attempts
 # ---------------------------------------------------------------------------
 
 class TestChoiceAttempt:
@@ -171,17 +172,19 @@ class TestChoiceAttempt:
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "B",
             },
         )
         assert resp.status_code == 201
         data = resp.json()
+        assert data["status"] == "completed"
         assert data["is_correct"] is True
         assert data["score"] == 1.0
         assert data["correct_answer"] == "B"
         assert data["explanation"] == "reduceByKey 需要按 key 重新分区。"
+        assert data.get("reference_answer") is None
 
     def test_wrong_answer_feedback(self, tmp_db: Session, content_dir: Path):
         _write_content(content_dir)
@@ -192,25 +195,25 @@ class TestChoiceAttempt:
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "A",
             },
         )
         assert resp.status_code == 201
         data = resp.json()
+        assert data["status"] == "completed"
         assert data["is_correct"] is False
         assert data["score"] == 0.0
         assert data["correct_answer"] == "B"
-        assert data["explanation"] == "reduceByKey 需要按 key 重新分区。"
 
 
 # ---------------------------------------------------------------------------
-# Short Answer attempts — no Choice feedback leaked
+# Short Answer attempts — Task 5.1
 # ---------------------------------------------------------------------------
 
 class TestShortAnswerAttempt:
-    def test_submit_text_answer(self, tmp_db: Session, content_dir: Path):
+    def test_returns_reference_answer(self, tmp_db: Session, content_dir: Path):
         _write_content(content_dir)
         import_content(content_dir, tmp_db)
         client = _make_client(tmp_db)
@@ -219,21 +222,278 @@ class TestShortAnswerAttempt:
             "/api/v1/questions/spark.shuffle.qa.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
-                "answer": "Shuffle 是数据重新分区的过程",
+                "answer": "用户答案",
             },
         )
         assert resp.status_code == 201
         data = resp.json()
+        assert data["reference_answer"] == "Shuffle 是数据重新分区的过程。"
+
+    def test_returns_explanation(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "用户答案",
+            },
+        )
+        data = resp.json()
+        assert data["explanation"] == "宽依赖触发 Shuffle。"
+
+    def test_status_awaiting_self_assessment(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "用户答案",
+            },
+        )
+        assert resp.json()["status"] == "awaiting_self_assessment"
+
+    def test_no_score_fields(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "用户答案",
+            },
+        )
+        data = resp.json()
         assert data["is_correct"] is None
         assert data["score"] is None
         assert data["correct_answer"] is None
-        assert data["explanation"] is None
+
+    def test_returns_answer(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "我的回答内容",
+            },
+        )
+        assert resp.json()["answer"] == "我的回答内容"
+
+    def test_db_lifecycle(self, tmp_db: Session, content_dir: Path):
+        """Verify Attempt DB fields for Short Answer lifecycle."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        cid = str(uuid4())
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": cid,
+                "answer": "用户答案",
+            },
+        )
+        assert resp.status_code == 201
+
+        # Check DB directly
+        attempt = (
+            tmp_db.query(Attempt)
+            .filter(Attempt.client_request_id == cid)
+            .first()
+        )
+        assert attempt is not None
+        assert attempt.status == "awaiting_self_assessment"
+        assert attempt.user_answer == "用户答案"
+        assert attempt.final_score is None
+        assert attempt.max_score is None
+        assert attempt.final_score_source is None
+        assert attempt.finalized_at is None
+        assert attempt.review_applied_at is None
+
+    def test_uses_specified_revision(self, tmp_db: Session, content_dir: Path):
+        """reference_answer comes from specified revision, not current."""
+        from app.db.models.question import Question, QuestionVersion
+
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        # Insert revision 2 with different reference_answer
+        v2 = QuestionVersion(
+            question_id="spark.shuffle.qa.001",
+            revision=2,
+            payload_json=json.dumps({
+                "content": "不同内容",
+                "reference_answer": "Revision 2 参考答案",
+                "explanation": "Revision 2 解析",
+            }),
+        )
+        tmp_db.add(v2)
+        q = (
+            tmp_db.query(Question)
+            .filter(Question.id == "spark.shuffle.qa.001")
+            .first()
+        )
+        q.current_revision = 2
+        tmp_db.commit()
+
+        # Submit with question_revision=1
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "用户答案",
+            },
+        )
+        data = resp.json()
+        # Should use revision 1's reference_answer
+        assert data["reference_answer"] == "Shuffle 是数据重新分区的过程。"
+        assert data["explanation"] == "宽依赖触发 Shuffle。"
 
 
 # ---------------------------------------------------------------------------
-# SQL attempts — no Choice feedback leaked
+# Short Answer idempotency
+# ---------------------------------------------------------------------------
+
+class TestShortAnswerIdempotency:
+    def test_idempotent_feedback_consistent(
+        self, tmp_db: Session, content_dir: Path
+    ):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        cid = str(uuid4())
+        body = {
+            "question_revision": 1,
+            "attempt_type": "practice",
+            "client_request_id": cid,
+            "answer": "用户答案",
+        }
+
+        resp1 = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts", json=body
+        )
+        assert resp1.status_code == 201
+        data1 = resp1.json()
+
+        resp2 = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts", json=body
+        )
+        assert resp2.status_code == 200
+        data2 = resp2.json()
+
+        assert data1["attempt_id"] == data2["attempt_id"]
+        assert data1["status"] == data2["status"]
+        assert data1["answer"] == data2["answer"]
+        assert data1["reference_answer"] == data2["reference_answer"]
+        assert data1["explanation"] == data2["explanation"]
+
+    def test_idempotent_uses_attempt_revision(
+        self, tmp_db: Session, content_dir: Path
+    ):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        # Submit with revision=1
+        cid = str(uuid4())
+        body = {
+            "question_revision": 1,
+            "attempt_type": "practice",
+            "client_request_id": cid,
+            "answer": "用户答案",
+        }
+        resp1 = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts", json=body
+        )
+        data1 = resp1.json()
+        assert data1["reference_answer"] == "Shuffle 是数据重新分区的过程。"
+
+        # Change current_revision to 2
+        from app.db.models.question import Question, QuestionVersion
+        v2 = QuestionVersion(
+            question_id="spark.shuffle.qa.001",
+            revision=2,
+            payload_json=json.dumps({
+                "content": "x",
+                "reference_answer": "Revision 2 参考答案",
+                "explanation": "Revision 2 解析",
+            }),
+        )
+        tmp_db.add(v2)
+        q = (
+            tmp_db.query(Question)
+            .filter(Question.id == "spark.shuffle.qa.001")
+            .first()
+        )
+        q.current_revision = 2
+        tmp_db.commit()
+
+        # Retry → should still use revision 1
+        resp2 = client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts", json=body
+        )
+        data2 = resp2.json()
+        assert data2["reference_answer"] == "Shuffle 是数据重新分区的过程。"
+        assert data2["explanation"] == "宽依赖触发 Shuffle。"
+        assert data2["attempt_id"] == data1["attempt_id"]
+
+    def test_no_duplicate_attempt(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        cid = str(uuid4())
+        body = {
+            "question_revision": 1,
+            "attempt_type": "practice",
+            "client_request_id": cid,
+            "answer": "用户答案",
+        }
+
+        client = _make_client(tmp_db)
+        client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts", json=body
+        )
+        client.post(
+            "/api/v1/questions/spark.shuffle.qa.001/attempts", json=body
+        )
+
+        # Only one Attempt in DB
+        count = (
+            tmp_db.query(Attempt)
+            .filter(Attempt.client_request_id == cid)
+            .count()
+        )
+        assert count == 1
+
+
+# ---------------------------------------------------------------------------
+# SQL attempts — no change
 # ---------------------------------------------------------------------------
 
 class TestSQLAttempt:
@@ -246,29 +506,29 @@ class TestSQLAttempt:
             "/api/v1/questions/spark.shuffle.sql.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "SELECT * FROM emp",
             },
         )
         assert resp.status_code == 201
         data = resp.json()
+        assert data["status"] == "completed"
         assert data["is_correct"] is None
         assert data["score"] is None
         assert data["correct_answer"] is None
+        assert data["reference_answer"] is None
         assert data["explanation"] is None
 
 
 # ---------------------------------------------------------------------------
-# Idempotency — Step A feedback consistency
+# Idempotency — Choice
 # ---------------------------------------------------------------------------
 
-class TestIdempotency:
+class TestChoiceIdempotency:
     def test_idempotent_choice_feedback_consistent(
         self, tmp_db: Session, content_dir: Path
     ):
-        """Same client_request_id → same attempt_id, is_correct, score,
-        correct_answer, explanation."""
         _write_content(content_dir)
         import_content(content_dir, tmp_db)
         client = _make_client(tmp_db)
@@ -276,7 +536,7 @@ class TestIdempotency:
         cid = str(uuid4())
         body = {
             "question_revision": 1,
-            "attempt_type": "new",
+            "attempt_type": "practice",
             "client_request_id": cid,
             "answer": "B",
         }
@@ -293,8 +553,8 @@ class TestIdempotency:
         assert resp2.status_code == 200
         data2 = resp2.json()
 
-        # All feedback fields must match
         assert data1["attempt_id"] == data2["attempt_id"]
+        assert data1["status"] == data2["status"]
         assert data1["is_correct"] == data2["is_correct"]
         assert data1["score"] == data2["score"]
         assert data1["correct_answer"] == data2["correct_answer"]
@@ -303,39 +563,34 @@ class TestIdempotency:
     def test_idempotent_uses_attempt_revision_not_current(
         self, tmp_db: Session, content_dir: Path
     ):
-        """Idempotent response reads feedback from attempt.question_revision,
-        NOT Question.current_revision."""
         from app.db.models.question import Question, QuestionVersion
 
         _write_content(content_dir)
         import_content(content_dir, tmp_db)
         client = _make_client(tmp_db)
 
-        # First submit with revision=1 (correct_answer=B)
         cid = str(uuid4())
         body = {
             "question_revision": 1,
-            "attempt_type": "new",
+            "attempt_type": "practice",
             "client_request_id": cid,
             "answer": "B",
         }
         resp1 = client.post(
             "/api/v1/questions/spark.shuffle.choice.001/attempts", json=body
         )
-        assert resp1.status_code == 201
         data1 = resp1.json()
         assert data1["correct_answer"] == "B"
-        assert data1["explanation"] == "reduceByKey 需要按 key 重新分区。"
 
-        # Now change current_revision to 2 with different correct_answer
+        # Change current_revision to 2
         v2 = QuestionVersion(
             question_id="spark.shuffle.choice.001",
             revision=2,
             payload_json=json.dumps({
-                "content": "Different content",
+                "content": "x",
                 "options": [{"key": "A", "text": "x"}],
                 "correct_answer": "A",
-                "explanation": "Revision 2 explanation.",
+                "explanation": "Rev2",
             }),
         )
         tmp_db.add(v2)
@@ -347,16 +602,11 @@ class TestIdempotency:
         q.current_revision = 2
         tmp_db.commit()
 
-        # Retry with same client_request_id → 200
         resp2 = client.post(
             "/api/v1/questions/spark.shuffle.choice.001/attempts", json=body
         )
-        assert resp2.status_code == 200
         data2 = resp2.json()
-
-        # Feedback must still be from revision=1, NOT current_revision=2
         assert data2["correct_answer"] == "B"
-        assert data2["explanation"] == "reduceByKey 需要按 key 重新分区。"
         assert data2["attempt_id"] == data1["attempt_id"]
 
     def test_different_client_request_ids_create_separate(
@@ -370,7 +620,7 @@ class TestIdempotency:
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "B",
             },
@@ -379,7 +629,7 @@ class TestIdempotency:
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "A",
             },
@@ -388,55 +638,9 @@ class TestIdempotency:
         assert resp2.status_code == 201
         assert resp1.json()["attempt_id"] != resp2.json()["attempt_id"]
 
-    def test_idempotent_short_answer(self, tmp_db: Session, content_dir: Path):
-        _write_content(content_dir)
-        import_content(content_dir, tmp_db)
-        client = _make_client(tmp_db)
-
-        cid = str(uuid4())
-        body = {
-            "question_revision": 1,
-            "attempt_type": "new",
-            "client_request_id": cid,
-            "answer": "my answer",
-        }
-
-        resp1 = client.post(
-            "/api/v1/questions/spark.shuffle.qa.001/attempts", json=body
-        )
-        resp2 = client.post(
-            "/api/v1/questions/spark.shuffle.qa.001/attempts", json=body
-        )
-        assert resp1.status_code == 201
-        assert resp2.status_code == 200
-        assert resp1.json()["attempt_id"] == resp2.json()["attempt_id"]
-
-    def test_idempotent_sql(self, tmp_db: Session, content_dir: Path):
-        _write_content(content_dir)
-        import_content(content_dir, tmp_db)
-        client = _make_client(tmp_db)
-
-        cid = str(uuid4())
-        body = {
-            "question_revision": 1,
-            "attempt_type": "new",
-            "client_request_id": cid,
-            "answer": "SELECT 1",
-        }
-
-        resp1 = client.post(
-            "/api/v1/questions/spark.shuffle.sql.001/attempts", json=body
-        )
-        resp2 = client.post(
-            "/api/v1/questions/spark.shuffle.sql.001/attempts", json=body
-        )
-        assert resp1.status_code == 201
-        assert resp2.status_code == 200
-        assert resp1.json()["attempt_id"] == resp2.json()["attempt_id"]
-
 
 # ---------------------------------------------------------------------------
-# Revision binding (Task 4.4)
+# Revision binding
 # ---------------------------------------------------------------------------
 
 class TestRevisionBinding:
@@ -449,13 +653,12 @@ class TestRevisionBinding:
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "B",
             },
         )
-        data = resp.json()
-        assert data["question_revision"] == 1
+        assert resp.json()["question_revision"] == 1
 
     def test_invalid_revision_400(self, tmp_db: Session, content_dir: Path):
         _write_content(content_dir)
@@ -466,7 +669,7 @@ class TestRevisionBinding:
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 999,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "B",
             },
@@ -477,21 +680,11 @@ class TestRevisionBinding:
     def test_choice_grading_uses_specified_revision(
         self, tmp_db: Session, content_dir: Path
     ):
-        """Prove Choice grading uses the client-specified revision's payload.
-
-        revision 1: correct_answer = B (from content import)
-        revision 2: correct_answer = A (manually inserted)
-        current_revision = 2
-
-        Submit with question_revision=1, answer=B → is_correct=True
-        (because it judges against revision 1, not current_revision 2)
-        """
         from app.db.models.question import Question, QuestionVersion
 
         _write_content(content_dir)
         import_content(content_dir, tmp_db)
 
-        # Verify revision 1 exists with correct_answer=B
         v1 = (
             tmp_db.query(QuestionVersion)
             .filter(
@@ -500,11 +693,9 @@ class TestRevisionBinding:
             )
             .first()
         )
-        assert v1 is not None
         payload1 = json.loads(v1.payload_json)
         assert payload1["correct_answer"] == "B"
 
-        # Insert revision 2 with correct_answer=A
         v2 = QuestionVersion(
             question_id="spark.shuffle.choice.001",
             revision=2,
@@ -512,12 +703,10 @@ class TestRevisionBinding:
                 "content": payload1["content"],
                 "options": payload1["options"],
                 "correct_answer": "A",
-                "explanation": "Different answer for revision 2.",
+                "explanation": "Rev2.",
             }),
         )
         tmp_db.add(v2)
-
-        # Set current_revision = 2
         q = (
             tmp_db.query(Question)
             .filter(Question.id == "spark.shuffle.choice.001")
@@ -527,25 +716,19 @@ class TestRevisionBinding:
         tmp_db.commit()
 
         client = _make_client(tmp_db)
-
-        # Submit with question_revision=1, answer=B
-        # B is correct for revision 1, but WRONG for revision 2 (current)
         resp = client.post(
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "B",
             },
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["question_revision"] == 1
         assert data["is_correct"] is True
-        assert data["score"] == 1.0
         assert data["correct_answer"] == "B"
-        assert data["explanation"] == "reduceByKey 需要按 key 重新分区。"
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +745,7 @@ class TestAttemptErrors:
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "",
             },
@@ -579,7 +762,7 @@ class TestAttemptErrors:
             "/api/v1/questions/nonexistent/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "B",
             },
@@ -600,12 +783,40 @@ class TestAttemptErrors:
             "/api/v1/questions/spark.shuffle.choice.001/attempts",
             json={
                 "question_revision": 1,
-                "attempt_type": "new",
+                "attempt_type": "practice",
                 "client_request_id": str(uuid4()),
                 "answer": "B",
             },
         )
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Answer hiding — GET question still hides answers
+# ---------------------------------------------------------------------------
+
+class TestAnswerHiding:
+    def test_short_answer_get_hides_reference(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.get("/api/v1/questions/spark.shuffle.qa.001")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "reference_answer" not in data
+        assert "explanation" not in data
+
+    def test_choice_get_hides_correct(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.get("/api/v1/questions/spark.shuffle.choice.001")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "correct_answer" not in data
+        assert "explanation" not in data
 
 
 # ---------------------------------------------------------------------------

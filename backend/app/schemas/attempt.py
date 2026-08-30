@@ -1,4 +1,4 @@
-"""Pydantic schemas for Attempt API — Task 4.4 + Step A feedback."""
+"""Pydantic schemas for Attempt API — Task 5.1."""
 
 from __future__ import annotations
 
@@ -24,7 +24,9 @@ class AttemptSubmitResponse(BaseModel):
     question_id: str
     question_revision: int
     answer: str
+    status: str
     is_correct: Optional[bool] = None
     score: Optional[float] = None
     correct_answer: Optional[str] = None
+    reference_answer: Optional[str] = None
     explanation: Optional[str] = None
