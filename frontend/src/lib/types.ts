@@ -153,3 +153,49 @@ export interface PendingAttemptItem {
 export interface PendingAttemptsResponse {
   short_answer_self_assessment: PendingAttemptItem[]
 }
+
+// ---------------------------------------------------------------------------
+// ReviewState
+// ---------------------------------------------------------------------------
+
+export interface ReviewStateInfo {
+  question_id: string
+  mastery_state: string | null
+  next_review_date: string | null
+  review_count: number
+  consecutive_successes: number
+  review_stage: number | null
+  policy_version: string | null
+}
+
+export interface ManualMasteryBody {
+  mastery_state: "unmastered" | "vague" | "familiar" | "mastered"
+}
+
+// ---------------------------------------------------------------------------
+// Wrong Book
+// ---------------------------------------------------------------------------
+
+export interface WrongBookItem {
+  question_id: string
+  title: string | null
+  question_type: string
+  difficulty: number
+  primary_knowledge_point_id: string
+  primary_knowledge_point_name: string | null
+  mastery_state: string | null
+  next_review_date: string | null
+  wrong_book_mode: string
+  has_card: boolean
+}
+
+export interface WrongBookResponse {
+  items: WrongBookItem[]
+  page: number
+  page_size: number
+  total: number
+}
+
+export interface WrongBookPreferenceBody {
+  mode: "auto" | "follow" | "ignore"
+}

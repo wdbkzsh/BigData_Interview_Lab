@@ -40,6 +40,9 @@ export default function Home() {
         <Link href="/practice/short-answer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
           问答题练习 →
         </Link>
+        <Link href="/wrong-book" style={{ color: '#0070f3', textDecoration: 'underline' }}>
+          错题本 →
+        </Link>
       </nav>
     </main>
   )

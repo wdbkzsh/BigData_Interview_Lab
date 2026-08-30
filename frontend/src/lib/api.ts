@@ -13,6 +13,10 @@ import type {
   PendingAttemptsResponse,
   SelfAssessmentBody,
   SelfAssessmentResult,
+  ReviewStateInfo,
+  ManualMasteryBody,
+  WrongBookResponse,
+  WrongBookPreferenceBody,
 } from "./types"
 
 const API_BASE_URL =
@@ -133,6 +137,69 @@ export async function submitSelfAssessment(
     `/api/v1/attempts/${attemptId}/self-assessment`,
     {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ReviewState
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/questions/{id}/review-state */
+export async function fetchReviewState(
+  questionId: string
+): Promise<ReviewStateInfo> {
+  return apiFetch<ReviewStateInfo>(`/api/v1/questions/${questionId}/review-state`)
+}
+
+/** PUT /api/v1/questions/{id}/review-state */
+export async function updateReviewState(
+  questionId: string,
+  body: ManualMasteryBody
+): Promise<ReviewStateInfo> {
+  return apiFetch<ReviewStateInfo>(
+    `/api/v1/questions/${questionId}/review-state`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Wrong Book
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/wrong-book */
+export async function fetchWrongBook(params: {
+  knowledge_point_id?: string
+  question_type?: string
+  mastery_state?: string
+  page?: number
+  page_size?: number
+}): Promise<WrongBookResponse> {
+  const searchParams = new URLSearchParams()
+  if (params.knowledge_point_id) searchParams.set("knowledge_point_id", params.knowledge_point_id)
+  if (params.question_type) searchParams.set("question_type", params.question_type)
+  if (params.mastery_state) searchParams.set("mastery_state", params.mastery_state)
+  if (params.page) searchParams.set("page", String(params.page))
+  if (params.page_size) searchParams.set("page_size", String(params.page_size))
+  const qs = searchParams.toString()
+  return apiFetch<WrongBookResponse>(`/api/v1/wrong-book${qs ? `?${qs}` : ""}`)
+}
+
+/** PUT /api/v1/questions/{id}/wrong-book-preference */
+export async function setWrongBookPreference(
+  questionId: string,
+  body: WrongBookPreferenceBody
+): Promise<{ question_id: string; mode: string }> {
+  return apiFetch<{ question_id: string; mode: string }>(
+    `/api/v1/questions/${questionId}/wrong-book-preference`,
+    {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }
