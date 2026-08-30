@@ -9,6 +9,10 @@ import type {
   QuestionDetail,
   AttemptSubmitBody,
   AttemptResult,
+  AttemptDetail,
+  PendingAttemptsResponse,
+  SelfAssessmentBody,
+  SelfAssessmentResult,
 } from "./types"
 
 const API_BASE_URL =
@@ -96,6 +100,37 @@ export async function submitAttempt(
 ): Promise<AttemptResult> {
   return apiFetch<AttemptResult>(
     `/api/v1/questions/${questionId}/attempts`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Self-Assessment / Recovery
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/attempts/{id} */
+export async function fetchAttemptDetail(
+  attemptId: number
+): Promise<AttemptDetail> {
+  return apiFetch<AttemptDetail>(`/api/v1/attempts/${attemptId}`)
+}
+
+/** GET /api/v1/attempts/pending */
+export async function fetchPendingAttempts(): Promise<PendingAttemptsResponse> {
+  return apiFetch<PendingAttemptsResponse>("/api/v1/attempts/pending")
+}
+
+/** POST /api/v1/attempts/{id}/self-assessment */
+export async function submitSelfAssessment(
+  attemptId: number,
+  body: SelfAssessmentBody
+): Promise<SelfAssessmentResult> {
+  return apiFetch<SelfAssessmentResult>(
+    `/api/v1/attempts/${attemptId}/self-assessment`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

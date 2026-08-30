@@ -178,6 +178,18 @@ def self_assessment(
 
 
 # ---------------------------------------------------------------------------
+# GET /api/v1/attempts/pending — pending self-assessments
+# MUST be before /attempts/{attempt_id} to avoid route conflict
+# ---------------------------------------------------------------------------
+
+@router.get("/attempts/pending", response_model=PendingAttemptsResponse)
+def list_pending(db: Session = Depends(get_db)):
+    """List all attempts awaiting self-assessment."""
+    result = get_pending_attempts(db)
+    return PendingAttemptsResponse(**result)
+
+
+# ---------------------------------------------------------------------------
 # GET /api/v1/attempts/{attempt_id} — attempt detail
 # ---------------------------------------------------------------------------
 
@@ -195,14 +207,3 @@ def get_attempt(attempt_id: int, db: Session = Depends(get_db)):
             },
         )
     return AttemptDetailResponse(**detail)
-
-
-# ---------------------------------------------------------------------------
-# GET /api/v1/attempts/pending — pending self-assessments
-# ---------------------------------------------------------------------------
-
-@router.get("/attempts/pending", response_model=PendingAttemptsResponse)
-def list_pending(db: Session = Depends(get_db)):
-    """List all attempts awaiting self-assessment."""
-    result = get_pending_attempts(db)
-    return PendingAttemptsResponse(**result)

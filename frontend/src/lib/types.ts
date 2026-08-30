@@ -99,8 +99,57 @@ export interface AttemptResult {
   question_id: string
   question_revision: number
   answer: string
+  status: string
   is_correct: boolean | null
   score: number | null
   correct_answer: string | null
+  reference_answer: string | null
   explanation: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Self-Assessment
+// ---------------------------------------------------------------------------
+
+export interface SelfAssessmentBody {
+  mastery_state: "unmastered" | "vague" | "familiar" | "mastered"
+}
+
+export interface ReviewStateSnapshot {
+  mastery_state: string
+  next_review_date: string
+  policy_version: string
+}
+
+export interface SelfAssessmentResult {
+  attempt_id: number
+  status: string
+  self_assessed_mastery_state: string
+  review_state: ReviewStateSnapshot
+}
+
+// ---------------------------------------------------------------------------
+// Attempt detail / recovery
+// ---------------------------------------------------------------------------
+
+export interface AttemptDetail {
+  id: number
+  question_id: string
+  question_revision: number
+  attempt_type: string
+  status: string
+  answer: string
+  self_assessed_mastery_state: string | null
+  reference_answer: string | null
+  explanation: string | null
+}
+
+export interface PendingAttemptItem {
+  attempt_id: number
+  question_id: string
+  created_at: string | null
+}
+
+export interface PendingAttemptsResponse {
+  short_answer_self_assessment: PendingAttemptItem[]
 }

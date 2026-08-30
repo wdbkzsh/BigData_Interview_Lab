@@ -37,6 +37,9 @@ export default function Home() {
         <Link href="/practice/choice" style={{ color: '#0070f3', textDecoration: 'underline' }}>
           选择题练习 →
         </Link>
+        <Link href="/practice/short-answer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
+          问答题练习 →
+        </Link>
       </nav>
     </main>
   )

@@ -1,0 +1,199 @@
+.container {
+  max-width: 720px;
+}
+
+.meta {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-secondary, #999);
+  margin-bottom: 12px;
+}
+
+.content {
+  font-size: 16px;
+  line-height: 1.7;
+  margin-bottom: 24px;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 16px;
+}
+
+.textarea:disabled {
+  opacity: 0.7;
+  background: rgba(128, 128, 128, 0.05);
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.submitButton,
+.retryButton {
+  padding: 10px 24px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.submitButton:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.retryButton {
+  border-color: #c62828;
+  color: #c62828;
+}
+
+.retryButton:hover {
+  background: rgba(198, 40, 40, 0.05);
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.submitError {
+  padding: 12px 16px;
+  border: 1px solid #c62828;
+  border-radius: 6px;
+  color: #c62828;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+/* Reference answer display */
+.reference {
+  padding: 20px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+
+.section {
+  margin-bottom: 16px;
+}
+
+.section:last-child {
+  margin-bottom: 0;
+}
+
+.sectionLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #666);
+  margin-bottom: 4px;
+}
+
+.sectionValue {
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+/* Self-assessment buttons */
+.saButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.saButton {
+  padding: 10px 20px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.saButton:hover:not(:disabled) {
+  border-color: #0070f3;
+  background: rgba(0, 112, 243, 0.05);
+}
+
+.saButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.saButtonSubmitting {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Completion feedback */
+.completion {
+  padding: 20px;
+  border: 1px solid #2e7d32;
+  border-radius: 8px;
+  margin-bottom: 24px;
+}
+
+.completionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2e7d32;
+  margin-bottom: 12px;
+}
+
+.completionField {
+  margin-bottom: 8px;
+}
+
+.completionLabel {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+}
+
+.completionValue {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.nextButton {
+  padding: 10px 24px;
+  border: 1px solid #0070f3;
+  border-radius: 6px;
+  background: #0070f3;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.nextButton:hover {
+  background: #005bb5;
+}
+
+.loading,
+.error {
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-secondary, #999);
+}
+
+.error {
+  color: #c62828;
+}
