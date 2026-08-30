@@ -111,7 +111,21 @@ def create_attempt(
     )
     db.add(attempt)
 
-    # 6. Choice: apply score-based ReviewState in same transaction
+    # 6. Flush to get attempt.id without committing
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        existing = (
+            db.query(Attempt)
+            .filter(Attempt.client_request_id == str(client_request_id))
+            .first()
+        )
+        if existing:
+            return _build_response_from_existing(db, existing)
+        raise
+
+    # 7. Choice: apply score-based ReviewState in same transaction
     if q.question_type == "choice" and score is not None and max_score is not None:
         from datetime import datetime, timezone
         from zoneinfo import ZoneInfo
@@ -127,7 +141,6 @@ def create_attempt(
         current_consecutive = current_rs["consecutive_successes"] if current_rs else 0
         current_algo_json = None
         if current_rs and current_rs.get("policy_version"):
-            # Re-read raw algorithm_state_json from DB
             from app.db.models.review import ReviewState as RSModel
             rs_row = db.query(RSModel.algorithm_state_json).filter(
                 RSModel.question_id == q.id
@@ -143,6 +156,7 @@ def create_attempt(
             current_algorithm_state_json=current_algo_json,
         )
 
+        now = datetime.now(timezone.utc)
         upsert_review_state(
             db,
             question_id=q.id,
@@ -152,34 +166,18 @@ def create_attempt(
             consecutive_successes=policy_result.consecutive_successes,
             policy_version=policy_result.policy_version,
             algorithm_state_json=policy_result.algorithm_state_json,
-            last_attempt_id=None,  # Will be set after commit
+            last_attempt_id=attempt.id,
             increment_review_count=(attempt_type == "review"),
         )
+        attempt.review_applied_at = now
 
+    # 8. Single commit for everything
     try:
         db.commit()
         db.refresh(attempt)
-    except IntegrityError:
+    except Exception:
         db.rollback()
-        existing = (
-            db.query(Attempt)
-            .filter(Attempt.client_request_id == str(client_request_id))
-            .first()
-        )
-        if existing:
-            return _build_response_from_existing(db, existing)
         raise
-
-    # 7. Post-commit: set last_attempt_id and review_applied_at for Choice
-    if q.question_type == "choice" and score is not None:
-        from datetime import datetime, timezone
-        from app.db.models.review import ReviewState as RSModel
-        rs_row = db.query(RSModel).filter(RSModel.question_id == q.id).first()
-        if rs_row:
-            rs_row.last_attempt_id = attempt.id
-            attempt.review_applied_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(attempt)
 
     return _build_new_response(
         attempt,
