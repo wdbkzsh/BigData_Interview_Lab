@@ -1,4 +1,4 @@
-"""Attempt API — Task 4.4.
+"""Attempt API — Task 4.4 + Step A feedback.
 
 Endpoints:
     POST /api/v1/questions/{question_id}/attempts — submit an answer (idempotent)
@@ -7,6 +7,7 @@ Endpoints:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -18,6 +19,20 @@ from app.services.attempt_service import (
 )
 
 router = APIRouter(prefix="/api/v1")
+
+
+def _build_submit_response(result: dict) -> AttemptSubmitResponse:
+    """Build AttemptSubmitResponse from service result dict."""
+    return AttemptSubmitResponse(
+        attempt_id=result["attempt_id"],
+        question_id=result["question_id"],
+        question_revision=result["question_revision"],
+        answer=result["answer"],
+        is_correct=result["is_correct"],
+        score=result["score"],
+        correct_answer=result.get("correct_answer"),
+        explanation=result.get("explanation"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -69,28 +84,10 @@ def submit_attempt(
             },
         )
 
+    response = _build_submit_response(result)
+
     # 200 if existed, 201 if new
     if result.get("existed"):
-        return AttemptSubmitResponse(
-            attempt_id=result["attempt_id"],
-            question_id=result["question_id"],
-            question_revision=result["question_revision"],
-            answer=result["answer"],
-            is_correct=result["is_correct"],
-            score=result["score"],
-        )
+        return response
 
-    # New attempt — return 201
-    from fastapi.responses import JSONResponse
-
-    return JSONResponse(
-        status_code=201,
-        content=AttemptSubmitResponse(
-            attempt_id=result["attempt_id"],
-            question_id=result["question_id"],
-            question_revision=result["question_revision"],
-            answer=result["answer"],
-            is_correct=result["is_correct"],
-            score=result["score"],
-        ).model_dump(),
-    )
+    return JSONResponse(status_code=201, content=response.model_dump())

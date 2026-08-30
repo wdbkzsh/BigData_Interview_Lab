@@ -1,7 +1,8 @@
-"""Attempt service — Task 4.4.
+"""Attempt service — Task 4.4 + Step A feedback.
 
 Handles attempt creation, answer saving, choice auto-grading,
-client_request_id idempotency, and question_revision version binding.
+client_request_id idempotency, question_revision version binding,
+and correct_answer/explanation feedback for Choice.
 Does NOT handle ReviewState, Wrong Book, DailyTask, or AI grading.
 """
 
@@ -31,7 +32,7 @@ def create_attempt(
 
     Returns:
         {"attempt_id", "question_id", "question_revision", "answer",
-         "is_correct", "score", "existed"}
+         "is_correct", "score", "correct_answer", "explanation", "existed"}
     Raises:
         QuestionNotFoundError: question not found or inactive
         InvalidRevisionError: specified revision does not exist
@@ -43,7 +44,7 @@ def create_attempt(
         .first()
     )
     if existing:
-        return _build_response(existing, existed=True)
+        return _build_response_from_existing(db, existing)
 
     # 2. Validate question exists and is active
     q = (
@@ -76,15 +77,19 @@ def create_attempt(
     score: Optional[float] = None
     max_score: Optional[float] = None
     final_score_source: Optional[str] = None
+    correct_answer: Optional[str] = None
+    explanation: Optional[str] = None
     status = "completed"
 
     if q.question_type == "choice":
-        correct_answer = payload.get("correct_answer", "")
-        is_correct = answer.strip() == correct_answer.strip()
+        ca = payload.get("correct_answer", "")
+        correct_answer = ca
+        explanation = payload.get("explanation")
+        is_correct = answer.strip() == ca.strip()
         score = 1.0 if is_correct else 0.0
         max_score = 1.0
         final_score_source = "system"
-    # short_answer and sql: no auto-grading
+    # short_answer and sql: no auto-grading, no feedback
 
     # 5. Create attempt
     attempt = Attempt(
@@ -112,20 +117,8 @@ def create_attempt(
             .first()
         )
         if existing:
-            return _build_response(existing, existed=True)
+            return _build_response_from_existing(db, existing)
         raise
-
-    return _build_response(attempt, existed=False)
-
-
-def _build_response(attempt: Attempt, *, existed: bool) -> dict[str, Any]:
-    """Build response dict from an Attempt."""
-    is_correct: Optional[bool] = None
-    score: Optional[float] = None
-
-    if attempt.final_score is not None and attempt.max_score is not None:
-        score = attempt.final_score
-        is_correct = score == attempt.max_score
 
     return {
         "attempt_id": attempt.id,
@@ -134,7 +127,57 @@ def _build_response(attempt: Attempt, *, existed: bool) -> dict[str, Any]:
         "answer": attempt.user_answer,
         "is_correct": is_correct,
         "score": score,
-        "existed": existed,
+        "correct_answer": correct_answer,
+        "explanation": explanation,
+        "existed": False,
+    }
+
+
+def _build_response_from_existing(db: Session, attempt: Attempt) -> dict[str, Any]:
+    """Build response for an idempotent hit (existing attempt).
+
+    Reads QuestionVersion.payload_json using the attempt's question_id
+    and question_revision (NOT current_revision).
+    """
+    is_correct: Optional[bool] = None
+    score: Optional[float] = None
+    correct_answer: Optional[str] = None
+    explanation: Optional[str] = None
+
+    if attempt.final_score is not None and attempt.max_score is not None:
+        score = attempt.final_score
+        is_correct = score == attempt.max_score
+
+    # Read feedback from the QuestionVersion this attempt was graded against
+    version = (
+        db.query(QuestionVersion)
+        .filter(
+            QuestionVersion.question_id == attempt.question_id,
+            QuestionVersion.revision == attempt.question_revision,
+        )
+        .first()
+    )
+    if version:
+        payload = json.loads(version.payload_json)
+        q = (
+            db.query(Question.question_type)
+            .filter(Question.id == attempt.question_id)
+            .first()
+        )
+        if q and q.question_type == "choice":
+            correct_answer = payload.get("correct_answer")
+            explanation = payload.get("explanation")
+
+    return {
+        "attempt_id": attempt.id,
+        "question_id": attempt.question_id,
+        "question_revision": attempt.question_revision,
+        "answer": attempt.user_answer,
+        "is_correct": is_correct,
+        "score": score,
+        "correct_answer": correct_answer,
+        "explanation": explanation,
+        "existed": True,
     }
 
 
