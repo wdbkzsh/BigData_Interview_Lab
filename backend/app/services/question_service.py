@@ -1,8 +1,7 @@
-"""Question query service — Task 4.1.
+"""Question query service — Phase 6.5.
 
 Provides list and detail queries for questions.
-Does NOT expose HTTP endpoints — that is Task 4.2.
-Does NOT access ReviewState / Attempt / DailyTask.
+List includes ReviewState summary and pending self-assessment info.
 """
 
 from __future__ import annotations
@@ -10,11 +9,13 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from sqlalchemy import func
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app.db.models.attempt import Attempt
 from app.db.models.knowledge import KnowledgePoint
 from app.db.models.question import Question, QuestionVersion
+from app.db.models.review import ReviewState
 
 
 def list_questions(
@@ -23,16 +24,44 @@ def list_questions(
     knowledge_point_id: Optional[str] = None,
     question_type: Optional[str] = None,
     difficulty: Optional[int] = None,
+    mastery_state: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
-    """Query questions with filters and pagination.
+    """Query questions with filters, pagination, and ReviewState summary.
+
+    mastery_state filter values:
+        not_started, unmastered, vague, familiar, mastered
 
     Returns:
         {"items": [...], "page": int, "page_size": int, "total": int}
     """
-    # Base filter: active only
-    base = db.query(Question).filter(Question.is_active == True)  # noqa: E712
+    # Subquery: pending self-assessment attempts
+    pending_sa = (
+        db.query(
+            Attempt.question_id,
+            Attempt.id.label("pending_sa_id"),
+        )
+        .filter(Attempt.status == "awaiting_self_assessment")
+        .subquery()
+    )
+
+    # Base query with joins
+    base = (
+        db.query(
+            Question.id,
+            Question.title,
+            Question.question_type,
+            Question.difficulty,
+            Question.primary_knowledge_point_id,
+            ReviewState.mastery_state.label("rs_mastery_state"),
+            ReviewState.next_review_date.label("rs_next_review_date"),
+            pending_sa.c.pending_sa_id,
+        )
+        .outerjoin(ReviewState, ReviewState.question_id == Question.id)
+        .outerjoin(pending_sa, pending_sa.c.question_id == Question.id)
+        .filter(Question.is_active == True)  # noqa: E712
+    )
 
     # Apply filters
     if knowledge_point_id is not None:
@@ -41,6 +70,13 @@ def list_questions(
         base = base.filter(Question.question_type == question_type)
     if difficulty is not None:
         base = base.filter(Question.difficulty == difficulty)
+
+    # mastery_state filter
+    if mastery_state is not None:
+        if mastery_state == "not_started":
+            base = base.filter(ReviewState.mastery_state.is_(None))
+        else:
+            base = base.filter(ReviewState.mastery_state == mastery_state)
 
     # Total count
     total = base.count()
@@ -53,14 +89,38 @@ def list_questions(
         .all()
     )
 
-    # Build items — lightweight list representation
+    # Get knowledge point names (batch to avoid N+1)
+    kp_ids = {r.primary_knowledge_point_id for r in rows}
+    kp_names: dict[str, str] = {}
+    if kp_ids:
+        kps = (
+            db.query(KnowledgePoint.id, KnowledgePoint.name)
+            .filter(KnowledgePoint.id.in_(kp_ids))
+            .all()
+        )
+        kp_names = {kp.id: kp.name for kp in kps}
+
+    # Build items
     items = []
-    for q in rows:
+    for r in rows:
+        review_state = None
+        if r.rs_mastery_state is not None:
+            review_state = {
+                "mastery_state": r.rs_mastery_state,
+                "next_review_date": str(r.rs_next_review_date) if r.rs_next_review_date else None,
+            }
+
         items.append({
-            "id": q.id,
-            "title": q.title,
-            "question_type": q.question_type,
-            "difficulty": q.difficulty,
+            "id": r.id,
+            "title": r.title,
+            "question_type": r.question_type,
+            "difficulty": r.difficulty,
+            "primary_knowledge_point": {
+                "id": r.primary_knowledge_point_id,
+                "name": kp_names.get(r.primary_knowledge_point_id),
+            },
+            "review_state": review_state,
+            "pending_self_assessment_attempt_id": r.pending_sa_id,
         })
 
     return {

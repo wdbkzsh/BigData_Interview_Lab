@@ -1,0 +1,110 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 8px;
+  transition: border-color 0.15s;
+}
+
+.item:hover {
+  border-color: rgba(128, 128, 128, 0.35);
+}
+
+.itemLeft {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemTitle {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-secondary, #999);
+}
+
+.status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.statusNotStarted {
+  background: rgba(128, 128, 128, 0.1);
+  color: #999;
+}
+
+.statusPending {
+  background: rgba(0, 112, 243, 0.1);
+  color: #0070f3;
+}
+
+.statusUnmastered {
+  background: rgba(198, 40, 40, 0.1);
+  color: #c62828;
+}
+
+.statusVague {
+  background: rgba(255, 152, 0, 0.1);
+  color: #e65100;
+}
+
+.statusFamiliar {
+  background: rgba(46, 125, 50, 0.1);
+  color: #2e7d32;
+}
+
+.statusMastered {
+  background: rgba(25, 118, 210, 0.1);
+  color: #1976d2;
+}
+
+.nextReview {
+  font-size: 12px;
+  color: var(--text-secondary, #bbb);
+}
+
+.actionButton {
+  padding: 6px 16px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.actionButton:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-secondary, #999);
+  font-size: 14px;
+}

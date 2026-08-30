@@ -45,11 +45,19 @@ export interface KnowledgeCard {
 // Question
 // ---------------------------------------------------------------------------
 
+export interface ReviewStateSummary {
+  mastery_state: string
+  next_review_date: string | null
+}
+
 export interface QuestionListItem {
   id: string
   title: string | null
   question_type: string
   difficulty: number
+  primary_knowledge_point: KnowledgePointRef
+  review_state: ReviewStateSummary | null
+  pending_self_assessment_attempt_id: number | null
 }
 
 export interface QuestionListResponse {

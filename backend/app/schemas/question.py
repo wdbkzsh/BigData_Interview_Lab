@@ -1,10 +1,25 @@
-"""Pydantic response schemas for Question API — Task 4.2."""
+"""Pydantic response schemas for Question API — Phase 6.5."""
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Optional
 
 from pydantic import BaseModel
+
+
+class KnowledgePointRef(BaseModel):
+    """Reference to a knowledge point."""
+
+    id: str
+    name: Optional[str]
+
+
+class ReviewStateSummary(BaseModel):
+    """Summary of ReviewState for question list items."""
+
+    mastery_state: str
+    next_review_date: Optional[str] = None
 
 
 class QuestionListItem(BaseModel):
@@ -14,6 +29,9 @@ class QuestionListItem(BaseModel):
     title: Optional[str]
     question_type: str
     difficulty: int
+    primary_knowledge_point: KnowledgePointRef
+    review_state: Optional[ReviewStateSummary] = None
+    pending_self_assessment_attempt_id: Optional[int] = None
 
 
 class QuestionListResponse(BaseModel):
@@ -23,13 +41,6 @@ class QuestionListResponse(BaseModel):
     page: int
     page_size: int
     total: int
-
-
-class KnowledgePointRef(BaseModel):
-    """Reference to a knowledge point."""
-
-    id: str
-    name: Optional[str]
 
 
 class ChoiceOption(BaseModel):

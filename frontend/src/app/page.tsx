@@ -32,13 +32,13 @@ export default function Home() {
       {status === 'error' && <p>Backend unavailable</p>}
       <nav style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Link href="/knowledge" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-          进入知识点 →
+          知识库 →
         </Link>
         <Link href="/practice/choice" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-          选择题练习 →
+          选择题题库 →
         </Link>
         <Link href="/practice/short-answer" style={{ color: '#0070f3', textDecoration: 'underline' }}>
-          问答题练习 →
+          问答题题库 →
         </Link>
         <Link href="/wrong-book" style={{ color: '#0070f3', textDecoration: 'underline' }}>
           错题本 →

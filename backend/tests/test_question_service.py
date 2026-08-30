@@ -291,13 +291,19 @@ class TestListQuestions:
         assert difficulties == sorted(difficulties)
 
     def test_item_fields(self, tmp_db: Session, content_dir: Path):
-        """List items contain only id, title, question_type, difficulty."""
+        """List items contain expected fields."""
         _write_content(content_dir)
         import_content(content_dir, tmp_db)
 
         result = list_questions(tmp_db)
         item = result["items"][0]
-        assert set(item.keys()) == {"id", "title", "question_type", "difficulty"}
+        assert "id" in item
+        assert "title" in item
+        assert "question_type" in item
+        assert "difficulty" in item
+        assert "primary_knowledge_point" in item
+        assert "review_state" in item
+        assert "pending_self_assessment_attempt_id" in item
 
 
 # ---------------------------------------------------------------------------

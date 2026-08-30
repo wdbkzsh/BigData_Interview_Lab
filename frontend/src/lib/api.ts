@@ -75,11 +75,13 @@ export async function recordCardView(
 /** GET /api/v1/questions?question_type=choice&page=1&page_size=20 */
 export async function fetchQuestions(params: {
   question_type?: string
+  mastery_state?: string
   page?: number
   page_size?: number
 }): Promise<QuestionListResponse> {
   const searchParams = new URLSearchParams()
   if (params.question_type) searchParams.set("question_type", params.question_type)
+  if (params.mastery_state) searchParams.set("mastery_state", params.mastery_state)
   if (params.page) searchParams.set("page", String(params.page))
   if (params.page_size) searchParams.set("page_size", String(params.page_size))
   const qs = searchParams.toString()

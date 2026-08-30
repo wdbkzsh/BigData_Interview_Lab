@@ -1,7 +1,7 @@
-"""Question API — Task 4.2.
+"""Question API — Phase 6.5.
 
 Endpoints:
-    GET /api/v1/questions       — question list with filters
+    GET /api/v1/questions       — question list with filters + ReviewState
     GET /api/v1/questions/{id}  — single question detail (answer hidden)
 """
 
@@ -14,11 +14,12 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.question import (
+    ChoiceOption,
+    KnowledgePointRef,
     QuestionDetailResponse,
     QuestionListItem,
     QuestionListResponse,
-    KnowledgePointRef,
-    ChoiceOption,
+    ReviewStateSummary,
 )
 from app.services.question_service import get_question_detail, list_questions
 
@@ -34,21 +35,43 @@ def get_questions(
     knowledge_point_id: Optional[str] = None,
     question_type: Optional[str] = None,
     difficulty: Optional[int] = None,
+    mastery_state: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
 ):
-    """Return a filtered, paginated list of questions."""
+    """Return a filtered, paginated list of questions with ReviewState."""
     result = list_questions(
         db,
         knowledge_point_id=knowledge_point_id,
         question_type=question_type,
         difficulty=difficulty,
+        mastery_state=mastery_state,
         page=page,
         page_size=page_size,
     )
+
+    items = []
+    for item in result["items"]:
+        rs = item.get("review_state")
+        items.append(QuestionListItem(
+            id=item["id"],
+            title=item["title"],
+            question_type=item["question_type"],
+            difficulty=item["difficulty"],
+            primary_knowledge_point=KnowledgePointRef(
+                id=item["primary_knowledge_point"]["id"],
+                name=item["primary_knowledge_point"]["name"],
+            ),
+            review_state=ReviewStateSummary(
+                mastery_state=rs["mastery_state"],
+                next_review_date=rs["next_review_date"],
+            ) if rs else None,
+            pending_self_assessment_attempt_id=item.get("pending_self_assessment_attempt_id"),
+        ))
+
     return QuestionListResponse(
-        items=[QuestionListItem(**item) for item in result["items"]],
+        items=items,
         page=result["page"],
         page_size=result["page_size"],
         total=result["total"],
@@ -73,7 +96,6 @@ def get_question(question_id: str, db: Session = Depends(get_db)):
             },
         )
 
-    # Build response from service result
     kp = detail.get("primary_knowledge_point", {})
     return QuestionDetailResponse(
         id=detail["id"],

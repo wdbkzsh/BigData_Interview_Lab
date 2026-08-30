@@ -1,45 +1,41 @@
 "use client"
 
 import { Suspense, useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { fetchQuestions, fetchPendingAttempts } from "@/lib/api"
-import type { QuestionListItem, PendingAttemptItem } from "@/lib/types"
+import type { QuestionListItem } from "@/lib/types"
 import ShortAnswerQuestion from "@/components/practice/ShortAnswerQuestion"
+import QuestionBank from "@/components/practice/QuestionBank"
 import styles from "./page.module.css"
 
 function ShortAnswerPracticeContent() {
+  const searchParams = useSearchParams()
   const router = useRouter()
+  const questionId = searchParams.get("id")
 
   const [questions, setQuestions] = useState<QuestionListItem[]>([])
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [pendingAttempt, setPendingAttempt] = useState<PendingAttemptItem | null>(
-    null
-  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [finished, setFinished] = useState(false)
-  const [recovering, setRecovering] = useState(false)
+  const [pendingAttemptId, setPendingAttemptId] = useState<number | null>(null)
 
-  // Load question list and check for pending attempts
+  // Load question bank and check pending
   useEffect(() => {
     const init = async () => {
       try {
-        // Check for pending attempts first
-        const pending = await fetchPendingAttempts()
-        if (pending.short_answer_self_assessment.length > 0) {
-          setPendingAttempt(pending.short_answer_self_assessment[0])
-          setRecovering(true)
-        }
-
-        // Load question list
-        const data = await fetchQuestions({
-          question_type: "short_answer",
-          page: 1,
-          page_size: 20,
-        })
+        const [data, pending] = await Promise.all([
+          fetchQuestions({ question_type: "short_answer", page: 1, page_size: 50 }),
+          fetchPendingAttempts(),
+        ])
         setQuestions(data.items)
-        if (data.items.length === 0 && !pending.short_answer_self_assessment.length) {
-          setFinished(true)
+
+        // If we have a questionId and there's a pending attempt for it, recover
+        if (questionId) {
+          const match = pending.short_answer_self_assessment.find(
+            (p) => p.question_id === questionId
+          )
+          if (match) {
+            setPendingAttemptId(match.attempt_id)
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "加载失败")
@@ -48,19 +44,24 @@ function ShortAnswerPracticeContent() {
       }
     }
     init()
-  }, [])
+  }, [questionId])
 
+  // Handle "next question"
   const handleDone = useCallback(() => {
-    setPendingAttempt(null)
-    setRecovering(false)
-
-    const nextIndex = currentIndex + 1
-    if (nextIndex >= questions.length) {
-      setFinished(true)
+    setPendingAttemptId(null)
+    const idx = questions.findIndex((q) => q.id === questionId)
+    const nextIdx = idx + 1
+    if (nextIdx < questions.length) {
+      router.push(`/practice/short-answer?id=${questions[nextIdx].id}`)
     } else {
-      setCurrentIndex(nextIndex)
+      router.push("/practice/short-answer")
     }
-  }, [currentIndex, questions])
+  }, [questions, questionId, router])
+
+  // Handle "return to bank"
+  const handleBackToBank = useCallback(() => {
+    router.push("/practice/short-answer")
+  }, [router])
 
   // --- Render ---
 
@@ -68,9 +69,9 @@ function ShortAnswerPracticeContent() {
     return (
       <div className={styles.page}>
         <header className={styles.header}>
-          <h1 className={styles.title}>问答题练习</h1>
+          <h1 className={styles.title}>问答题题库</h1>
         </header>
-        <div className={styles.loading}>加载题目列表...</div>
+        <div className={styles.loading}>加载中...</div>
       </div>
     )
   }
@@ -79,80 +80,45 @@ function ShortAnswerPracticeContent() {
     return (
       <div className={styles.page}>
         <header className={styles.header}>
-          <h1 className={styles.title}>问答题练习</h1>
+          <h1 className={styles.title}>问答题题库</h1>
         </header>
         <div className={styles.error}>{error}</div>
       </div>
     )
   }
 
-  if (finished) {
+  // No questionId → show question bank
+  if (!questionId) {
     return (
       <div className={styles.page}>
         <header className={styles.header}>
-          <h1 className={styles.title}>问答题练习</h1>
-        </header>
-        <div className={styles.done}>
-          <p>本页练习已完成</p>
-          <button
-            className={styles.backButton}
-            onClick={() => router.push("/")}
-            type="button"
-          >
-            返回首页
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Recovery mode: pending attempt exists
-  if (recovering && pendingAttempt) {
-    return (
-      <div className={styles.page}>
-        <header className={styles.header}>
-          <h1 className={styles.title}>问答题练习</h1>
+          <h1 className={styles.title}>问答题题库</h1>
         </header>
         <div className={styles.content}>
-          <div className={styles.recoveryBanner}>
-            恢复未完成的自评：{pendingAttempt.question_id}
-          </div>
-          <ShortAnswerQuestion
-            key={`recovery-${pendingAttempt.attempt_id}`}
-            questionId={pendingAttempt.question_id}
-            pendingAttemptId={pendingAttempt.attempt_id}
-            onDone={handleDone}
-          />
+          <QuestionBank items={questions} basePath="/practice/short-answer" />
         </div>
       </div>
     )
   }
 
-  // Normal practice mode
-  const currentQuestion = questions[currentIndex]
-  if (!currentQuestion) {
-    return (
-      <div className={styles.page}>
-        <header className={styles.header}>
-          <h1 className={styles.title}>问答题练习</h1>
-        </header>
-        <div className={styles.error}>题目不存在</div>
-      </div>
-    )
-  }
-
+  // Has questionId → show question (with possible pending recovery)
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>问答题练习</h1>
-        <div className={styles.progress}>
-          {currentIndex + 1} / {questions.length}
-        </div>
+        <h1 className={styles.title}>问答题</h1>
+        <button
+          className={styles.backLink}
+          onClick={handleBackToBank}
+          type="button"
+        >
+          ← 返回题库
+        </button>
       </header>
       <div className={styles.content}>
         <ShortAnswerQuestion
-          key={currentQuestion.id}
-          questionId={currentQuestion.id}
+          key={pendingAttemptId ? `recovery-${pendingAttemptId}` : questionId}
+          questionId={questionId}
+          pendingAttemptId={pendingAttemptId}
           onDone={handleDone}
         />
       </div>
@@ -166,7 +132,7 @@ export default function ShortAnswerPracticePage() {
       fallback={
         <div className={styles.page}>
           <header className={styles.header}>
-            <h1 className={styles.title}>问答题练习</h1>
+            <h1 className={styles.title}>问答题题库</h1>
           </header>
           <div className={styles.loading}>加载中...</div>
         </div>

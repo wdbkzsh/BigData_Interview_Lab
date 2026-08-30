@@ -56,3 +56,22 @@
 .backButton:hover {
   background: rgba(128, 128, 128, 0.1);
 }
+
+.backLink {
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-family: inherit;
+  color: #0070f3;
+  cursor: pointer;
+  padding: 0;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.content {
+  flex: 1;
+  padding: 20px 24px;
+}
