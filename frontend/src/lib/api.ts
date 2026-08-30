@@ -5,6 +5,10 @@ import type {
   KnowledgePointDetail,
   KnowledgeCard,
   CardProgress,
+  QuestionListResponse,
+  QuestionDetail,
+  AttemptSubmitBody,
+  AttemptResult,
 } from "./types"
 
 const API_BASE_URL =
@@ -20,6 +24,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.json()
 }
+
+// ---------------------------------------------------------------------------
+// Knowledge
+// ---------------------------------------------------------------------------
 
 /** GET /api/v1/knowledge-points */
 export async function fetchKnowledgeTree(): Promise<KnowledgePointTreeNode[]> {
@@ -49,5 +57,49 @@ export async function recordCardView(
   return apiFetch<CardProgress>(
     `/api/v1/knowledge-cards/${cardId}/view`,
     { method: "POST" }
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Question
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/questions?question_type=choice&page=1&page_size=20 */
+export async function fetchQuestions(params: {
+  question_type?: string
+  page?: number
+  page_size?: number
+}): Promise<QuestionListResponse> {
+  const searchParams = new URLSearchParams()
+  if (params.question_type) searchParams.set("question_type", params.question_type)
+  if (params.page) searchParams.set("page", String(params.page))
+  if (params.page_size) searchParams.set("page_size", String(params.page_size))
+  const qs = searchParams.toString()
+  return apiFetch<QuestionListResponse>(`/api/v1/questions${qs ? `?${qs}` : ""}`)
+}
+
+/** GET /api/v1/questions/{id} */
+export async function fetchQuestionDetail(
+  questionId: string
+): Promise<QuestionDetail> {
+  return apiFetch<QuestionDetail>(`/api/v1/questions/${questionId}`)
+}
+
+// ---------------------------------------------------------------------------
+// Attempt
+// ---------------------------------------------------------------------------
+
+/** POST /api/v1/questions/{id}/attempts */
+export async function submitAttempt(
+  questionId: string,
+  body: AttemptSubmitBody
+): Promise<AttemptResult> {
+  return apiFetch<AttemptResult>(
+    `/api/v1/questions/${questionId}/attempts`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
   )
 }

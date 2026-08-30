@@ -30,9 +30,12 @@ export default function Home() {
       {status === 'loading' && <p>Checking backend...</p>}
       {status === 'ok' && <p>Backend status: ok</p>}
       {status === 'error' && <p>Backend unavailable</p>}
-      <nav style={{ marginTop: 24 }}>
+      <nav style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Link href="/knowledge" style={{ color: '#0070f3', textDecoration: 'underline' }}>
           进入知识点 →
+        </Link>
+        <Link href="/practice/choice" style={{ color: '#0070f3', textDecoration: 'underline' }}>
+          选择题练习 →
         </Link>
       </nav>
     </main>
