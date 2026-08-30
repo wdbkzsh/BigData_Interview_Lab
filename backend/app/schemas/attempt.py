@@ -1,7 +1,8 @@
-"""Pydantic schemas for Attempt API — Task 5.1."""
+"""Pydantic schemas for Attempt API — Task 5.1 + Phase 5 self-assessment."""
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -30,3 +31,30 @@ class AttemptSubmitResponse(BaseModel):
     correct_answer: Optional[str] = None
     reference_answer: Optional[str] = None
     explanation: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Self-Assessment (Phase 5)
+# ---------------------------------------------------------------------------
+
+class SelfAssessmentRequest(BaseModel):
+    """Request body for POST /api/v1/attempts/{id}/self-assessment."""
+
+    mastery_state: Literal["unmastered", "vague", "familiar", "mastered"]
+
+
+class ReviewStateSnapshot(BaseModel):
+    """ReviewState info returned after self-assessment."""
+
+    mastery_state: str
+    next_review_date: date
+    policy_version: str
+
+
+class SelfAssessmentResponse(BaseModel):
+    """Response for a successful self-assessment."""
+
+    attempt_id: int
+    status: str
+    self_assessed_mastery_state: str
+    review_state: ReviewStateSnapshot

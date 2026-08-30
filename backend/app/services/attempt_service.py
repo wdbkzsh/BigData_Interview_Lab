@@ -1,9 +1,9 @@
-"""Attempt service — Task 5.1.
+"""Attempt service — Task 5.1 + Phase 5 self-assessment.
 
 Handles attempt creation, answer saving, choice auto-grading,
 client_request_id idempotency, question_revision version binding,
-and feedback for Choice / Short Answer.
-Does NOT handle ReviewState, Wrong Book, DailyTask, or AI grading.
+feedback for Choice / Short Answer, and self-assessment with ReviewState.
+Does NOT handle Wrong Book, DailyTask, or AI grading.
 """
 
 from __future__ import annotations
@@ -221,3 +221,199 @@ class QuestionNotFoundError(Exception):
 
 class InvalidRevisionError(Exception):
     """Specified question revision does not exist."""
+
+
+# ---------------------------------------------------------------------------
+# Self-Assessment (Phase 5)
+# ---------------------------------------------------------------------------
+
+def submit_self_assessment(
+    db: Session,
+    *,
+    attempt_id: int,
+    mastery_state: str,
+) -> dict[str, Any]:
+    """Submit self-assessment for a short-answer attempt.
+
+    Uses conditional UPDATE as the first state change to claim processing
+    rights. Prevents concurrent double-application of ReviewState.
+
+    Returns:
+        {"attempt_id", "status", "self_assessed_mastery_state",
+         "review_state": {"mastery_state", "next_review_date", "policy_version"},
+         "existed": bool}
+    Raises:
+        AttemptNotFoundError: attempt does not exist
+        InvalidSelfAssessmentError: attempt not in correct state
+        SelfAssessmentConflictError: already completed with different mastery_state
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import update
+    from zoneinfo import ZoneInfo
+
+    from app.core.config import settings
+    from app.db.models.question import Question
+    from app.db.models.review import ReviewState
+    from app.review.policy import apply_self_assessment
+
+    now = datetime.now(timezone.utc)
+
+    # 1. Atomic claim: conditional UPDATE as first state change
+    stmt = (
+        update(Attempt)
+        .where(
+            Attempt.id == attempt_id,
+            Attempt.status == "awaiting_self_assessment",
+            Attempt.review_applied_at.is_(None),
+        )
+        .values(
+            self_assessed_mastery_state=mastery_state,
+            status="completed",
+            finalized_at=now,
+        )
+    )
+    result = db.execute(stmt)
+
+    if result.rowcount == 1:
+        # ---- Claimed processing rights ----
+        attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+
+        # Validate question_type (after claim — if invalid, we rollback)
+        q = (
+            db.query(Question.question_type, Question.id)
+            .filter(Question.id == attempt.question_id)
+            .first()
+        )
+        if not q or q.question_type != "short_answer":
+            db.rollback()
+            raise InvalidSelfAssessmentError("只有问答题可以自评")
+
+        # Get current ReviewState
+        current_rs = (
+            db.query(ReviewState)
+            .filter(ReviewState.question_id == attempt.question_id)
+            .first()
+        )
+        current_mastery = current_rs.mastery_state if current_rs else None
+        current_consecutive = current_rs.consecutive_successes if current_rs else 0
+        current_algo_json = current_rs.algorithm_state_json if current_rs else None
+
+        # Apply review policy
+        tz = ZoneInfo(settings.APP_TIMEZONE)
+        business_today = datetime.now(tz).date()
+
+        policy_result = apply_self_assessment(
+            mastery_state=mastery_state,
+            business_today=business_today,
+            current_mastery_state=current_mastery,
+            current_consecutive_successes=current_consecutive,
+            current_algorithm_state_json=current_algo_json,
+        )
+
+        # Upsert ReviewState
+        if current_rs:
+            current_rs.mastery_state = policy_result.mastery_state
+            current_rs.last_attempt_id = attempt.id
+            current_rs.last_review_at = now
+            current_rs.next_review_date = policy_result.next_review_date
+            if attempt.attempt_type == "review":
+                current_rs.review_count += 1
+            current_rs.consecutive_successes = policy_result.consecutive_successes
+            current_rs.policy_version = policy_result.policy_version
+            current_rs.algorithm_state_json = policy_result.algorithm_state_json
+        else:
+            new_rs = ReviewState(
+                question_id=attempt.question_id,
+                mastery_state=policy_result.mastery_state,
+                last_attempt_id=attempt.id,
+                last_review_at=now,
+                next_review_date=policy_result.next_review_date,
+                review_count=1 if attempt.attempt_type == "review" else 0,
+                consecutive_successes=policy_result.consecutive_successes,
+                policy_version=policy_result.policy_version,
+                algorithm_state_json=policy_result.algorithm_state_json,
+            )
+            db.add(new_rs)
+
+        attempt.review_applied_at = now
+
+        try:
+            db.commit()
+            db.refresh(attempt)
+        except Exception:
+            db.rollback()
+            raise
+
+        rs = (
+            db.query(ReviewState)
+            .filter(ReviewState.question_id == attempt.question_id)
+            .first()
+        )
+        return _build_self_assessment_response(attempt, rs, existed=False)
+
+    # ---- rowcount == 0: claim failed ----
+    # Re-read attempt to determine the reason
+    attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+    if not attempt:
+        raise AttemptNotFoundError()
+
+    # Check question_type for proper error message
+    q = (
+        db.query(Question.question_type)
+        .filter(Question.id == attempt.question_id)
+        .first()
+    )
+    if not q or q.question_type != "short_answer":
+        raise InvalidSelfAssessmentError("只有问答题可以自评")
+
+    # Already completed — check idempotent vs conflict
+    if attempt.status == "completed" and attempt.review_applied_at is not None:
+        if attempt.self_assessed_mastery_state == mastery_state:
+            rs = (
+                db.query(ReviewState)
+                .filter(ReviewState.question_id == attempt.question_id)
+                .first()
+            )
+            return _build_self_assessment_response(attempt, rs, existed=True)
+        else:
+            raise SelfAssessmentConflictError()
+
+    # Other non-awaiting state → 409 (state conflict, not request error)
+    raise SelfAssessmentConflictError()
+
+
+def _build_self_assessment_response(
+    attempt: Attempt,
+    review_state: Optional[Any],
+    *,
+    existed: bool,
+) -> dict[str, Any]:
+    """Build response for self-assessment."""
+    rs_snapshot = None
+    if review_state:
+        rs_snapshot = {
+            "mastery_state": review_state.mastery_state,
+            "next_review_date": review_state.next_review_date,
+            "policy_version": review_state.policy_version,
+        }
+
+    return {
+        "attempt_id": attempt.id,
+        "status": attempt.status,
+        "self_assessed_mastery_state": attempt.self_assessed_mastery_state,
+        "review_state": rs_snapshot,
+        "existed": existed,
+    }
+
+
+class AttemptNotFoundError(Exception):
+    """Attempt does not exist."""
+
+
+class InvalidSelfAssessmentError(Exception):
+    """Attempt is not in a valid state for self-assessment."""
+
+
+class SelfAssessmentConflictError(Exception):
+    """Attempt already completed with a different mastery_state."""
