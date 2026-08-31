@@ -21,6 +21,9 @@ from app.schemas.attempt import (
     ReviewStateSnapshot,
     SQLConfirmRequest,
     SQLConfirmResponse,
+    SQLDisputeRequest,
+    SQLDisputeResponse,
+    SQLRegradeResponse,
     SelfAssessmentRequest,
     SelfAssessmentResponse,
 )
@@ -31,11 +34,14 @@ from app.services.attempt_service import (
     InvalidSelfAssessmentError,
     QuestionNotFoundError,
     SQLConfirmConflictError,
+    SQLRegradeConflictError,
     SelfAssessmentConflictError,
     confirm_sql_attempt,
     create_attempt,
+    dispute_sql_attempt,
     get_attempt_detail,
     get_pending_attempts,
+    regrade_sql_attempt,
     submit_self_assessment,
 )
 
@@ -242,6 +248,102 @@ def confirm_attempt(
         return response
 
     return JSONResponse(status_code=201, content=response.model_dump(mode="json"))
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/attempts/{attempt_id}/regrade — SQL regrade
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/attempts/{attempt_id}/regrade",
+    response_model=SQLRegradeResponse,
+)
+def regrade_attempt(
+    attempt_id: int,
+    db: Session = Depends(get_db),
+):
+    """Regrade a SQL attempt."""
+    from app.llm.factory import create_provider
+    from app.llm.service import LLMService
+
+    try:
+        provider = create_provider()
+        llm_service = LLMService(provider)
+        result = regrade_sql_attempt(db, attempt_id=attempt_id, llm_service=llm_service)
+    except AttemptNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "ATTEMPT_NOT_FOUND", "message": "Attempt 不存在", "details": None},
+        )
+    except InvalidConfirmError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_REGRADE", "message": str(e), "details": None},
+        )
+    except SQLRegradeConflictError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SQL_REGRADE_CONFLICT", "message": str(e), "details": None},
+        )
+
+    assessment_data = None
+    raw = result.get("assessment")
+    if raw:
+        assessment_data = AssessmentData(**raw)
+
+    return SQLRegradeResponse(
+        attempt_id=result["attempt_id"],
+        status=result["status"],
+        assessment=assessment_data,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/attempts/{attempt_id}/dispute — SQL dispute
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/attempts/{attempt_id}/dispute",
+    response_model=SQLDisputeResponse,
+)
+def dispute_attempt(
+    attempt_id: int,
+    body: SQLDisputeRequest,
+    db: Session = Depends(get_db),
+):
+    """Mark a SQL attempt as disputed."""
+    if not body.reason or not body.reason.strip():
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_REASON", "message": "争议原因不能为空", "details": None},
+        )
+
+    try:
+        result = dispute_sql_attempt(
+            db,
+            attempt_id=attempt_id,
+            reason=body.reason.strip()[:500],
+        )
+    except AttemptNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "ATTEMPT_NOT_FOUND", "message": "Attempt 不存在", "details": None},
+        )
+    except InvalidConfirmError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_DISPUTE", "message": str(e), "details": None},
+        )
+    except SQLRegradeConflictError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SQL_DISPUTE_CONFLICT", "message": str(e), "details": None},
+        )
+
+    return SQLDisputeResponse(
+        attempt_id=result["attempt_id"],
+        status=result["status"],
+    )
 
 
 # ---------------------------------------------------------------------------

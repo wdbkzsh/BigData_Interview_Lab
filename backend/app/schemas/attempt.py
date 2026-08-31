@@ -131,8 +131,31 @@ class SQLConfirmResponse(BaseModel):
     policy_version: Optional[str] = None
 
 
+class SQLDisputeRequest(BaseModel):
+    """Request body for POST /api/v1/attempts/{id}/dispute."""
+
+    reason: str
+
+
+class SQLDisputeResponse(BaseModel):
+    """Response for SQL dispute."""
+
+    attempt_id: int
+    status: str
+
+
+class SQLRegradeResponse(BaseModel):
+    """Response for SQL regrade."""
+
+    attempt_id: int
+    status: str
+    assessment: Optional[AssessmentData] = None
+
+
 class PendingAttemptsResponse(BaseModel):
     """Response for GET /api/v1/attempts/pending."""
 
     short_answer_self_assessment: list[PendingAttemptItem]
     sql_confirmation: list[PendingAttemptItem]
+    sql_grading_failed: list[PendingAttemptItem]
+    sql_disputed: list[PendingAttemptItem]

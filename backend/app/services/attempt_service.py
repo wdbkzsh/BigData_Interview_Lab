@@ -737,6 +737,172 @@ class InvalidConfirmError(Exception):
     """Invalid confirm request."""
 
 
+class SQLRegradeConflictError(Exception):
+    """SQL Attempt in a state that conflicts with regrade."""
+
+
+# ---------------------------------------------------------------------------
+# SQL Regrade — Phase 8C2
+# ---------------------------------------------------------------------------
+
+def regrade_sql_attempt(
+    db: Session,
+    *,
+    attempt_id: int,
+    llm_service,
+) -> dict[str, Any]:
+    """Regrade a SQL attempt using LLM.
+
+    Allowed from: grading_failed, awaiting_confirmation, disputed.
+    Uses original question_revision and user_answer.
+    Creates new AIAssessment, does NOT update ReviewState.
+    """
+    from sqlalchemy import update
+
+    # 1. Conditional claim: set status to grading
+    stmt = (
+        update(Attempt)
+        .where(
+            Attempt.id == attempt_id,
+            Attempt.status.in_(["grading_failed", "awaiting_confirmation", "disputed"]),
+            Attempt.finalized_at.is_(None),
+            Attempt.review_applied_at.is_(None),
+        )
+        .values(status="grading")
+    )
+    result = db.execute(stmt)
+
+    if result.rowcount == 1:
+        # Claimed — proceed with regrade
+        attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+
+        # Verify it's SQL
+        from app.db.models.question import Question
+        q = db.query(Question.question_type).filter(Question.id == attempt.question_id).first()
+        if not q or q.question_type != "sql":
+            db.rollback()
+            raise InvalidConfirmError("只有 SQL 题可以 regrade")
+
+        try:
+            db.commit()
+            db.refresh(attempt)
+        except Exception:
+            db.rollback()
+            raise
+
+        # Call SQL grading service (Transaction B)
+        from app.services.sql_grading_service import grade_sql_attempt
+        grade_sql_attempt(db, attempt=attempt, llm_service=llm_service)
+
+        # Reload attempt
+        attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+        return _build_regrade_response(attempt)
+
+    # rowcount == 0: claim failed
+    attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+    if not attempt:
+        raise AttemptNotFoundError()
+
+    from app.db.models.question import Question
+    q = db.query(Question.question_type).filter(Question.id == attempt.question_id).first()
+    if not q or q.question_type != "sql":
+        raise InvalidConfirmError("只有 SQL 题可以 regrade")
+
+    if attempt.status == "grading":
+        raise SQLRegradeConflictError("正在判题中，请稍后再试")
+    if attempt.status == "completed":
+        raise SQLRegradeConflictError("已完成的 Attempt 不能 regrade")
+
+    raise SQLRegradeConflictError(f"当前状态 {attempt.status} 不能 regrade")
+
+
+def _build_regrade_response(attempt: Attempt) -> dict[str, Any]:
+    """Build regrade response."""
+    from app.db.models.attempt import AIAssessment
+
+    session = attempt._sa_instance_state.session
+    assessment = (
+        session.query(AIAssessment)
+        .filter(AIAssessment.attempt_id == attempt.id)
+        .order_by(AIAssessment.id.desc())
+        .first()
+    )
+
+    result: dict[str, Any] = {
+        "attempt_id": attempt.id,
+        "status": attempt.status,
+    }
+
+    if assessment:
+        result["assessment"] = {
+            "assessment_id": assessment.id,
+            "status": assessment.status,
+            "raw_score": assessment.raw_score,
+            "max_score": assessment.max_score,
+        }
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# SQL Dispute — Phase 8C2
+# ---------------------------------------------------------------------------
+
+def dispute_sql_attempt(
+    db: Session,
+    *,
+    attempt_id: int,
+    reason: str,
+) -> dict[str, Any]:
+    """Mark a SQL attempt as disputed.
+
+    Only allowed from: awaiting_confirmation.
+    Does NOT update ReviewState, DailyTask, or create Assessment.
+    """
+    from sqlalchemy import update
+
+    # Conditional claim
+    stmt = (
+        update(Attempt)
+        .where(
+            Attempt.id == attempt_id,
+            Attempt.status == "awaiting_confirmation",
+            Attempt.finalized_at.is_(None),
+        )
+        .values(status="disputed")
+    )
+    result = db.execute(stmt)
+
+    if result.rowcount == 1:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+        return {"attempt_id": attempt.id, "status": attempt.status}
+
+    # Claim failed
+    attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+    if not attempt:
+        raise AttemptNotFoundError()
+
+    from app.db.models.question import Question
+    q = db.query(Question.question_type).filter(Question.id == attempt.question_id).first()
+    if not q or q.question_type != "sql":
+        raise InvalidConfirmError("只有 SQL 题可以 dispute")
+
+    if attempt.status == "disputed":
+        # Idempotent
+        return {"attempt_id": attempt.id, "status": attempt.status}
+
+    if attempt.status == "completed":
+        raise SQLRegradeConflictError("已完成的 Attempt 不能 dispute")
+
+    raise SQLRegradeConflictError(f"当前状态 {attempt.status} 不能 dispute")
+
+
 # ---------------------------------------------------------------------------
 # Attempt detail / pending (recovery)
 # ---------------------------------------------------------------------------
@@ -865,7 +1031,41 @@ def get_pending_attempts(db: Session) -> dict[str, list[dict[str, Any]]]:
             "created_at": str(r.created_at) if r.created_at else None,
         })
 
+    # SQL grading failed
+    failed_rows = (
+        db.query(Attempt)
+        .filter(Attempt.status == "grading_failed")
+        .order_by(Attempt.created_at.asc())
+        .all()
+    )
+    failed_items = [
+        {
+            "attempt_id": r.id,
+            "question_id": r.question_id,
+            "created_at": str(r.created_at) if r.created_at else None,
+        }
+        for r in failed_rows
+    ]
+
+    # SQL disputed
+    disputed_rows = (
+        db.query(Attempt)
+        .filter(Attempt.status == "disputed")
+        .order_by(Attempt.created_at.asc())
+        .all()
+    )
+    disputed_items = [
+        {
+            "attempt_id": r.id,
+            "question_id": r.question_id,
+            "created_at": str(r.created_at) if r.created_at else None,
+        }
+        for r in disputed_rows
+    ]
+
     return {
         "short_answer_self_assessment": sa_items,
         "sql_confirmation": sql_items,
+        "sql_grading_failed": failed_items,
+        "sql_disputed": disputed_items,
     }

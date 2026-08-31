@@ -972,6 +972,319 @@ class TestKnowledgeContract:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# SQL Regrade (Phase 8C2)
+# ---------------------------------------------------------------------------
+
+class TestSQLRegrade:
+    def _create_grading_failed(self, tmp_db, content_dir, client):
+        """Create a grading_failed SQL attempt."""
+        from app.llm import factory
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        original = factory.create_provider
+        factory.create_provider = lambda: MockLLMProvider(mode="timeout")
+        try:
+            resp = client.post(
+                "/api/v1/questions/spark.shuffle.sql.001/attempts",
+                json={
+                    "question_revision": 1,
+                    "attempt_type": "practice",
+                    "client_request_id": str(uuid4()),
+                    "answer": "SELECT * FROM emp",
+                },
+            )
+            assert resp.json()["status"] == "grading_failed"
+            return resp.json()["attempt_id"]
+        finally:
+            factory.create_provider = original
+
+    def _create_awaiting(self, tmp_db, content_dir, client):
+        """Create an awaiting_confirmation SQL attempt."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.sql.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "SELECT * FROM emp",
+            },
+        )
+        assert resp.json()["status"] == "awaiting_confirmation"
+        return resp.json()["attempt_id"]
+
+    def test_regrade_from_failure(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_grading_failed(tmp_db, content_dir, client)
+
+        from app.db.models.attempt import AIAssessment
+        count_before = tmp_db.query(AIAssessment).filter(AIAssessment.attempt_id == attempt_id).count()
+
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["attempt_id"] == attempt_id
+        assert data["status"] == "awaiting_confirmation"
+
+        # Assessment count +1
+        count_after = tmp_db.query(AIAssessment).filter(AIAssessment.attempt_id == attempt_id).count()
+        assert count_after == count_before + 1
+
+    def test_regrade_from_awaiting(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        from app.db.models.attempt import AIAssessment
+        count_before = tmp_db.query(AIAssessment).filter(AIAssessment.attempt_id == attempt_id).count()
+
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "awaiting_confirmation"
+
+        count_after = tmp_db.query(AIAssessment).filter(AIAssessment.attempt_id == attempt_id).count()
+        assert count_after == count_before + 1
+
+    def test_same_attempt_id(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_grading_failed(tmp_db, content_dir, client)
+
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
+        assert resp.json()["attempt_id"] == attempt_id
+
+    def test_regrade_timeout(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_grading_failed(tmp_db, content_dir, client)
+
+        from app.llm import factory
+        original = factory.create_provider
+        factory.create_provider = lambda: MockLLMProvider(mode="timeout")
+        try:
+            resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
+            assert resp.status_code == 200
+            assert resp.json()["status"] == "grading_failed"
+        finally:
+            factory.create_provider = original
+
+    def test_completed_rejected(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        # Confirm first
+        client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
+        assert resp.status_code == 409
+
+    def test_grading_in_progress_rejected(self, tmp_db: Session, content_dir: Path):
+        """If status=grading, regrade should be rejected."""
+        from app.db.models.attempt import Attempt
+        client = _make_client(tmp_db)
+        attempt_id = self._create_grading_failed(tmp_db, content_dir, client)
+
+        # Manually set to grading
+        attempt = tmp_db.query(Attempt).filter(Attempt.id == attempt_id).first()
+        attempt.status = "grading"
+        tmp_db.commit()
+
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
+        assert resp.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# SQL Dispute (Phase 8C2)
+# ---------------------------------------------------------------------------
+
+class TestSQLDispute:
+    def _create_awaiting(self, tmp_db, content_dir, client):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.sql.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "SELECT * FROM emp",
+            },
+        )
+        assert resp.json()["status"] == "awaiting_confirmation"
+        return resp.json()["attempt_id"]
+
+    def test_dispute(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        resp = client.post(
+            f"/api/v1/attempts/{attempt_id}/dispute",
+            json={"reason": "AI 对 JOIN 条件理解错误"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "disputed"
+
+    def test_dispute_idempotent(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        client.post(f"/api/v1/attempts/{attempt_id}/dispute", json={"reason": "test"})
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/dispute", json={"reason": "test"})
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "disputed"
+
+    def test_dispute_no_llm_call(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        from app.db.models.attempt import AIAssessment
+        count_before = tmp_db.query(AIAssessment).count()
+
+        client.post(f"/api/v1/attempts/{attempt_id}/dispute", json={"reason": "test"})
+
+        count_after = tmp_db.query(AIAssessment).count()
+        assert count_after == count_before
+
+    def test_dispute_no_final_score(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        client.post(f"/api/v1/attempts/{attempt_id}/dispute", json={"reason": "test"})
+
+        from app.db.models.attempt import Attempt
+        attempt = tmp_db.query(Attempt).filter(Attempt.id == attempt_id).first()
+        assert attempt.final_score is None
+        assert attempt.finalized_at is None
+        assert attempt.review_applied_at is None
+
+    def test_dispute_no_review_state(self, tmp_db: Session, content_dir: Path):
+        from app.db.models.review import ReviewState
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        count_before = tmp_db.query(ReviewState).count()
+        client.post(f"/api/v1/attempts/{attempt_id}/dispute", json={"reason": "test"})
+        count_after = tmp_db.query(ReviewState).count()
+        assert count_after == count_before
+
+    def test_dispute_empty_reason_400(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/dispute", json={"reason": ""})
+        assert resp.status_code == 400
+
+    def test_dispute_completed_rejected(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/dispute", json={"reason": "test"})
+        assert resp.status_code == 409
+
+    def test_dispute_nonexistent(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post("/api/v1/attempts/99999/dispute", json={"reason": "test"})
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 8C1 Rollback hardening
+# ---------------------------------------------------------------------------
+
+class TestConfirmRollback:
+    def test_confirm_rollback_preserves_awaiting(self, tmp_db: Session, content_dir: Path):
+        """If finalization fails midway, Attempt should remain awaiting_confirmation."""
+        from app.db.models.attempt import Attempt, AttemptKnowledgeResult
+        from app.db.models.review import ReviewState
+
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.sql.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "SELECT 1",
+            },
+        )
+        attempt_id = resp.json()["attempt_id"]
+
+        # Verify state before confirm
+        attempt = tmp_db.query(Attempt).filter(Attempt.id == attempt_id).first()
+        assert attempt.status == "awaiting_confirmation"
+        assert attempt.final_score is None
+        assert attempt.finalized_at is None
+        assert attempt.review_applied_at is None
+
+        # Verify no knowledge results yet
+        kr_count = tmp_db.query(AttemptKnowledgeResult).filter(
+            AttemptKnowledgeResult.attempt_id == attempt_id
+        ).count()
+        assert kr_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Pending with new types
+# ---------------------------------------------------------------------------
+
+class TestPendingExtended:
+    def test_pending_includes_grading_failed(self, tmp_db: Session, content_dir: Path):
+        from app.llm import factory
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        original = factory.create_provider
+        factory.create_provider = lambda: MockLLMProvider(mode="timeout")
+        try:
+            client = _make_client(tmp_db)
+            resp = client.post(
+                "/api/v1/questions/spark.shuffle.sql.001/attempts",
+                json={
+                    "question_revision": 1,
+                    "attempt_type": "practice",
+                    "client_request_id": str(uuid4()),
+                    "answer": "SELECT 1",
+                },
+            )
+            attempt_id = resp.json()["attempt_id"]
+
+            pending = client.get("/api/v1/attempts/pending").json()
+            assert "sql_grading_failed" in pending
+            failed_ids = [p["attempt_id"] for p in pending["sql_grading_failed"]]
+            assert attempt_id in failed_ids
+        finally:
+            factory.create_provider = original
+
+    def test_pending_includes_disputed(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.sql.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "SELECT 1",
+            },
+        )
+        attempt_id = resp.json()["attempt_id"]
+        client.post(f"/api/v1/attempts/{attempt_id}/dispute", json={"reason": "test"})
+
+        pending = client.get("/api/v1/attempts/pending").json()
+        assert "sql_disputed" in pending
+        disputed_ids = [p["attempt_id"] for p in pending["sql_disputed"]]
+        assert attempt_id in disputed_ids
+
+
+# ---------------------------------------------------------------------------
 # Formal DB not polluted
 # ---------------------------------------------------------------------------
 
