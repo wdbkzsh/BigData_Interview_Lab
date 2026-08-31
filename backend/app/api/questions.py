@@ -105,10 +105,34 @@ def get_questions(
 # ---------------------------------------------------------------------------
 
 @router.get("/questions/{question_id}", response_model=QuestionDetailResponse)
-def get_question(question_id: str, db: Session = Depends(get_db)):
-    """Return a single question detail with answers hidden."""
-    detail = get_question_detail(db, question_id)
+def get_question(
+    question_id: str,
+    revision: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """Return a single question detail with answers hidden.
+
+    Optional revision query param to get a specific historical version.
+    """
+    detail = get_question_detail(db, question_id, revision=revision)
     if detail is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "QUESTION_NOT_FOUND",
+                "message": "题目不存在",
+                "details": None,
+            },
+        )
+    if detail.get("revision_not_found"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_REVISION",
+                "message": "指定的题目版本不存在",
+                "details": None,
+            },
+        )
         raise HTTPException(
             status_code=404,
             detail={

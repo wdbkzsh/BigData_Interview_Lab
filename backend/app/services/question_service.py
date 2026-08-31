@@ -231,10 +231,15 @@ def list_domains(db: Session) -> list[dict[str, str]]:
 def get_question_detail(
     db: Session,
     question_id: str,
+    revision: Optional[int] = None,
 ) -> Optional[dict[str, Any]]:
     """Query a single question detail with answer hiding.
 
+    If revision is specified, returns that specific version.
+    Otherwise returns current_revision.
+
     Returns None if question does not exist or is inactive.
+    Returns "revision_not_found" key if specific revision doesn't exist.
     """
     q = (
         db.query(Question)
@@ -247,16 +252,19 @@ def get_question_detail(
     if not q:
         return None
 
-    # Get current version
+    # Get specified or current version
+    target_revision = revision if revision is not None else q.current_revision
     version = (
         db.query(QuestionVersion)
         .filter(
             QuestionVersion.question_id == q.id,
-            QuestionVersion.revision == q.current_revision,
+            QuestionVersion.revision == target_revision,
         )
         .first()
     )
     if not version:
+        if revision is not None:
+            return {"revision_not_found": True}
         return None
 
     # Parse payload
@@ -273,7 +281,7 @@ def get_question_detail(
     # Build base result
     result: dict[str, Any] = {
         "id": q.id,
-        "revision": q.current_revision,
+        "revision": version.revision,
         "question_type": q.question_type,
         "difficulty": q.difficulty,
         "primary_knowledge_point": {
