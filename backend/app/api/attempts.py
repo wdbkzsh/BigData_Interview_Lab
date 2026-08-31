@@ -19,15 +19,20 @@ from app.schemas.attempt import (
     AttemptSubmitResponse,
     PendingAttemptsResponse,
     ReviewStateSnapshot,
+    SQLConfirmRequest,
+    SQLConfirmResponse,
     SelfAssessmentRequest,
     SelfAssessmentResponse,
 )
 from app.services.attempt_service import (
     AttemptNotFoundError,
+    InvalidConfirmError,
     InvalidRevisionError,
     InvalidSelfAssessmentError,
     QuestionNotFoundError,
+    SQLConfirmConflictError,
     SelfAssessmentConflictError,
+    confirm_sql_attempt,
     create_attempt,
     get_attempt_detail,
     get_pending_attempts,
@@ -179,6 +184,60 @@ def self_assessment(
     )
 
     # 200 if existed (idempotent), 201 if new
+    if result.get("existed"):
+        return response
+
+    return JSONResponse(status_code=201, content=response.model_dump(mode="json"))
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/attempts/{attempt_id}/confirm — SQL accept/adjust
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/attempts/{attempt_id}/confirm",
+    response_model=SQLConfirmResponse,
+)
+def confirm_attempt(
+    attempt_id: int,
+    body: SQLConfirmRequest,
+    db: Session = Depends(get_db),
+):
+    """Confirm a SQL attempt (accept or adjust)."""
+    try:
+        result = confirm_sql_attempt(
+            db,
+            attempt_id=attempt_id,
+            action=body.action,
+            final_score=body.final_score,
+        )
+    except AttemptNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "ATTEMPT_NOT_FOUND", "message": "Attempt 不存在", "details": None},
+        )
+    except InvalidConfirmError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_CONFIRM", "message": str(e), "details": None},
+        )
+    except SQLConfirmConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "SQL_CONFIRM_ALREADY_COMPLETED", "message": "该 Attempt 已完成确认", "details": None},
+        )
+
+    response = SQLConfirmResponse(
+        attempt_id=result["attempt_id"],
+        status=result["status"],
+        final_score=result.get("final_score"),
+        max_score=result.get("max_score"),
+        final_score_source=result.get("final_score_source"),
+        mastery_state=result.get("mastery_state"),
+        next_review_date=result.get("next_review_date"),
+        policy_version=result.get("policy_version"),
+    )
+
     if result.get("existed"):
         return response
 

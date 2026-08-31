@@ -518,6 +518,225 @@ class SelfAssessmentConflictError(Exception):
     """Attempt already completed with a different mastery_state."""
 
 
+class SQLConfirmConflictError(Exception):
+    """SQL Attempt already finalized with different parameters."""
+
+
+# ---------------------------------------------------------------------------
+# SQL Confirm (accept / adjust) — Phase 8C1
+# ---------------------------------------------------------------------------
+
+def confirm_sql_attempt(
+    db: Session,
+    *,
+    attempt_id: int,
+    action: str,
+    final_score: Optional[float] = None,
+) -> dict[str, Any]:
+    """Confirm a SQL attempt with accept or adjust.
+
+    Atomic transaction: updates Attempt + creates AttemptKnowledgeResult
+    + updates ReviewState + completes DailyTaskItem.
+
+    Raises:
+        AttemptNotFoundError: attempt not found
+        InvalidConfirmError: not SQL or wrong status
+        SQLConfirmConflictError: already finalized with different params
+    """
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    from sqlalchemy import update
+
+    from app.core.config import settings
+    from app.db.models.attempt import AIAssessment, AttemptKnowledgeResult
+    from app.db.models.question import Question
+    from app.review.policy import apply_score_based
+    from app.services.daily_task_service import complete_item_for_attempt
+    from app.services.review_service import get_review_state, upsert_review_state
+
+    # 1. Find attempt
+    attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+    if not attempt:
+        raise AttemptNotFoundError()
+
+    # 2. Check it's SQL
+    q = db.query(Question.question_type).filter(Question.id == attempt.question_id).first()
+    if not q or q.question_type != "sql":
+        raise InvalidConfirmError("只有 SQL 题可以 confirm")
+
+    # 3. Get latest successful assessment
+    assessment = (
+        db.query(AIAssessment)
+        .filter(
+            AIAssessment.attempt_id == attempt_id,
+            AIAssessment.status == "success",
+        )
+        .order_by(AIAssessment.id.desc())
+        .first()
+    )
+    if not assessment:
+        raise InvalidConfirmError("没有成功的 AI 评估结果")
+
+    # 4. Determine final score
+    if action == "accept":
+        effective_score = assessment.raw_score
+        score_source = "ai_confirmed"
+    elif action == "adjust":
+        if final_score is None:
+            raise InvalidConfirmError("adjust 必须提供 final_score")
+        if final_score < 0 or final_score > assessment.max_score:
+            raise InvalidConfirmError(
+                f"final_score 必须在 0 到 {assessment.max_score} 之间"
+            )
+        effective_score = final_score
+        score_source = "user_adjusted"
+    else:
+        raise InvalidConfirmError(f"未知 action: {action}")
+
+    # 5. Atomic claim: conditional update
+    now = datetime.now(timezone.utc)
+    stmt = (
+        update(Attempt)
+        .where(
+            Attempt.id == attempt_id,
+            Attempt.status == "awaiting_confirmation",
+            Attempt.finalized_at.is_(None),
+            Attempt.review_applied_at.is_(None),
+        )
+        .values(
+            status="completed",
+            final_score=effective_score,
+            max_score=assessment.max_score,
+            final_result_json=assessment.result_json,
+            final_score_source=score_source,
+            finalized_at=now,
+        )
+    )
+    result = db.execute(stmt)
+
+    if result.rowcount == 1:
+        # ---- Claimed processing rights ----
+        attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+
+        # 6. Create AttemptKnowledgeResult
+        if assessment.result_json:
+            parsed = json.loads(assessment.result_json)
+            ka = parsed.get("knowledge_analysis", {})
+            for evidence_type in ("mastered", "weak", "missing"):
+                for kp_id in ka.get(evidence_type, []):
+                    akr = AttemptKnowledgeResult(
+                        attempt_id=attempt.id,
+                        knowledge_point_id=kp_id,
+                        evidence_type=evidence_type,
+                    )
+                    db.add(akr)
+
+        # 7. Apply Review Policy
+        tz = ZoneInfo(settings.APP_TIMEZONE)
+        business_today = datetime.now(tz).date()
+
+        current_rs = get_review_state(db, attempt.question_id)
+        current_mastery = current_rs["mastery_state"] if current_rs else None
+        current_consecutive = current_rs["consecutive_successes"] if current_rs else 0
+        current_algo_json = None
+        if current_rs and current_rs.get("policy_version"):
+            from app.db.models.review import ReviewState as RSModel
+            rs_row = db.query(RSModel.algorithm_state_json).filter(
+                RSModel.question_id == attempt.question_id
+            ).first()
+            current_algo_json = rs_row[0] if rs_row else None
+
+        policy_result = apply_score_based(
+            final_score=effective_score,
+            max_score=assessment.max_score,
+            business_today=business_today,
+            current_mastery_state=current_mastery,
+            current_consecutive_successes=current_consecutive,
+            current_algorithm_state_json=current_algo_json,
+        )
+
+        upsert_review_state(
+            db,
+            question_id=attempt.question_id,
+            mastery_state=policy_result.mastery_state,
+            review_stage=policy_result.review_stage,
+            next_review_date=policy_result.next_review_date,
+            consecutive_successes=policy_result.consecutive_successes,
+            policy_version=policy_result.policy_version,
+            algorithm_state_json=policy_result.algorithm_state_json,
+            last_attempt_id=attempt.id,
+            increment_review_count=(attempt.attempt_type == "review"),
+        )
+
+        attempt.review_applied_at = now
+
+        # 8. Complete DailyTaskItem
+        if attempt.attempt_type in ("new", "review"):
+            complete_item_for_attempt(
+                db,
+                attempt_id=attempt.id,
+                question_id=attempt.question_id,
+                question_revision=attempt.question_revision,
+                attempt_type=attempt.attempt_type,
+                attempt_created_at=attempt.created_at,
+            )
+
+        # 9. Commit
+        try:
+            db.commit()
+            db.refresh(attempt)
+        except Exception:
+            db.rollback()
+            raise
+
+        rs = get_review_state(db, attempt.question_id)
+        return _build_confirm_response(attempt, rs)
+
+    # ---- rowcount == 0: claim failed ----
+    attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
+    if not attempt:
+        raise AttemptNotFoundError()
+
+    # Check if already finalized with same params (idempotent)
+    if attempt.status == "completed" and attempt.finalized_at is not None:
+        if action == "accept" and attempt.final_score_source == "ai_confirmed":
+            rs = get_review_state(db, attempt.question_id)
+            return _build_confirm_response(attempt, rs, existed=True)
+        if action == "adjust" and attempt.final_score_source == "user_adjusted":
+            if attempt.final_score == final_score:
+                rs = get_review_state(db, attempt.question_id)
+                return _build_confirm_response(attempt, rs, existed=True)
+
+    raise SQLConfirmConflictError("该 Attempt 已完成确认，不能重复操作")
+
+
+def _build_confirm_response(
+    attempt: Attempt,
+    review_state: Optional[dict] = None,
+    *,
+    existed: bool = False,
+) -> dict[str, Any]:
+    """Build confirm response."""
+    result: dict[str, Any] = {
+        "attempt_id": attempt.id,
+        "status": attempt.status,
+        "final_score": attempt.final_score,
+        "max_score": attempt.max_score,
+        "final_score_source": attempt.final_score_source,
+        "existed": existed,
+    }
+    if review_state:
+        result["mastery_state"] = review_state.get("mastery_state")
+        result["next_review_date"] = review_state.get("next_review_date")
+        result["policy_version"] = review_state.get("policy_version")
+    return result
+
+
+class InvalidConfirmError(Exception):
+    """Invalid confirm request."""
+
+
 # ---------------------------------------------------------------------------
 # Attempt detail / pending (recovery)
 # ---------------------------------------------------------------------------

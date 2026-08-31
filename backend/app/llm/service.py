@@ -130,3 +130,21 @@ def _validate_against_input(result: SQLGradingResult, inp: SQLGradingInput) -> N
             raise LLMInvalidResponseError(
                 f"criterion '{rc.id}': max_score {rc.max_score} != rubric {expected_max}"
             )
+
+    # Knowledge analysis: IDs must be from allowed set, no overlaps
+    if inp.knowledge_points:
+        allowed_kp_ids = {kp.id for kp in inp.knowledge_points}
+        ka = result.knowledge_analysis
+        all_kp_ids = set(ka.mastered) | set(ka.weak) | set(ka.missing)
+        unknown_kps = all_kp_ids - allowed_kp_ids
+        if unknown_kps:
+            raise LLMInvalidResponseError(
+                f"Unknown knowledge point IDs in analysis: {unknown_kps}"
+            )
+        # Check mutual exclusivity
+        if set(ka.mastered) & set(ka.weak):
+            raise LLMInvalidResponseError("KP appears in both mastered and weak")
+        if set(ka.mastered) & set(ka.missing):
+            raise LLMInvalidResponseError("KP appears in both mastered and missing")
+        if set(ka.weak) & set(ka.missing):
+            raise LLMInvalidResponseError("KP appears in both weak and missing")

@@ -107,6 +107,30 @@ class PendingAttemptItem(BaseModel):
     created_at: Optional[str] = None
 
 
+# ---------------------------------------------------------------------------
+# SQL Confirm (Phase 8C1)
+# ---------------------------------------------------------------------------
+
+class SQLConfirmRequest(BaseModel):
+    """Request body for POST /api/v1/attempts/{id}/confirm."""
+
+    action: Literal["accept", "adjust"]
+    final_score: Optional[float] = None
+
+
+class SQLConfirmResponse(BaseModel):
+    """Response for SQL confirm."""
+
+    attempt_id: int
+    status: str
+    final_score: Optional[float] = None
+    max_score: Optional[float] = None
+    final_score_source: Optional[str] = None
+    mastery_state: Optional[str] = None
+    next_review_date: Optional[str] = None
+    policy_version: Optional[str] = None
+
+
 class PendingAttemptsResponse(BaseModel):
     """Response for GET /api/v1/attempts/pending."""
 

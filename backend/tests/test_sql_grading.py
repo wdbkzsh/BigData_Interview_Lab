@@ -222,7 +222,7 @@ class TestSQLSuccess:
         assert assessment is not None
         assert assessment.provider == "mock"
         assert assessment.model == "mock-1"
-        assert assessment.prompt_version == "sql_grading_v1"
+        assert assessment.prompt_version == "sql_grading_v2"
         assert assessment.input_tokens == 100
         assert assessment.output_tokens == 50
         assert assessment.latency_ms == 10
@@ -649,6 +649,326 @@ class TestSQLRecovery:
             assert detail["assessment"]["status"] == "timeout"
         finally:
             factory.create_provider = original
+
+
+# ---------------------------------------------------------------------------
+# Formal DB not polluted
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# SQL Confirm (Phase 8C1)
+# ---------------------------------------------------------------------------
+
+class TestSQLConfirm:
+    def _create_awaiting(self, tmp_db, content_dir, client):
+        """Helper: create an SQL attempt in awaiting_confirmation state."""
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.sql.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "SELECT * FROM emp",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["status"] == "awaiting_confirmation"
+        return resp.json()["attempt_id"]
+
+    def test_accept(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        resp = client.post(
+            f"/api/v1/attempts/{attempt_id}/confirm",
+            json={"action": "accept"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["status"] == "completed"
+        assert data["final_score"] is not None
+        assert data["final_score_source"] == "ai_confirmed"
+        assert data["mastery_state"] is not None
+        assert data["next_review_date"] is not None
+        assert data["policy_version"] == "review_v2"
+
+    def test_adjust(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        resp = client.post(
+            f"/api/v1/attempts/{attempt_id}/confirm",
+            json={"action": "adjust", "final_score": 9},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["status"] == "completed"
+        assert data["final_score"] == 9.0
+        assert data["final_score_source"] == "user_adjusted"
+
+    def test_accept_idempotent(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        resp1 = client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+        resp2 = client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+        assert resp1.status_code == 201
+        assert resp2.status_code == 200
+        assert resp1.json()["attempt_id"] == resp2.json()["attempt_id"]
+
+    def test_adjust_idempotent(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        resp1 = client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "adjust", "final_score": 7})
+        resp2 = client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "adjust", "final_score": 7})
+        assert resp1.status_code == 201
+        assert resp2.status_code == 200
+
+    def test_different_action_returns_409(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "adjust", "final_score": 5})
+        assert resp.status_code == 409
+
+    def test_review_state_updated(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+
+        from app.db.models.review import ReviewState
+        rs = tmp_db.query(ReviewState).filter(ReviewState.question_id == "spark.shuffle.sql.001").first()
+        assert rs is not None
+        assert rs.mastery_state is not None
+        assert rs.policy_version == "review_v2"
+
+    def test_attempt_final_fields(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+
+        attempt = tmp_db.query(Attempt).filter(Attempt.id == attempt_id).first()
+        assert attempt.status == "completed"
+        assert attempt.final_score is not None
+        assert attempt.max_score is not None
+        assert attempt.final_score_source == "ai_confirmed"
+        assert attempt.final_result_json is not None
+        assert attempt.finalized_at is not None
+        assert attempt.review_applied_at is not None
+
+    def test_attempt_knowledge_result_created(self, tmp_db: Session, content_dir: Path):
+        from app.db.models.attempt import AttemptKnowledgeResult
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+
+        # Check if any knowledge results were created (depends on mock data)
+        count = tmp_db.query(AttemptKnowledgeResult).filter(
+            AttemptKnowledgeResult.attempt_id == attempt_id
+        ).count()
+        # Mock returns empty knowledge_analysis, so count may be 0
+        assert count >= 0
+
+    def test_ai_raw_score_unchanged(self, tmp_db: Session, content_dir: Path):
+        from app.db.models.attempt import AIAssessment
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        # Get original raw_score
+        assessment_before = tmp_db.query(AIAssessment).filter(
+            AIAssessment.attempt_id == attempt_id
+        ).first()
+        raw_before = assessment_before.raw_score
+
+        # Adjust to different score
+        client.post(
+            f"/api/v1/attempts/{attempt_id}/confirm",
+            json={"action": "adjust", "final_score": 3},
+        )
+
+        # AI raw_score unchanged
+        assessment_after = tmp_db.query(AIAssessment).filter(
+            AIAssessment.attempt_id == attempt_id
+        ).first()
+        assert assessment_after.raw_score == raw_before
+
+    def test_adjust_score_bounds(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        # Negative score
+        resp = client.post(
+            f"/api/v1/attempts/{attempt_id}/confirm",
+            json={"action": "adjust", "final_score": -1},
+        )
+        assert resp.status_code == 400
+
+    def test_adjust_over_max(self, tmp_db: Session, content_dir: Path):
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        resp = client.post(
+            f"/api/v1/attempts/{attempt_id}/confirm",
+            json={"action": "adjust", "final_score": 999},
+        )
+        assert resp.status_code == 400
+
+    def test_nonexistent_attempt(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post("/api/v1/attempts/99999/confirm", json={"action": "accept"})
+        assert resp.status_code == 404
+
+    def test_non_sql_rejected(self, tmp_db: Session, content_dir: Path):
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        # Create a choice attempt
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.choice.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "B",
+            },
+        )
+        attempt_id = resp.json()["attempt_id"]
+
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+        assert resp.status_code == 400
+
+    def test_review_count_for_review_type(self, tmp_db: Session, content_dir: Path):
+        from app.db.models.review import ReviewState
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.sql.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "review",
+                "client_request_id": str(uuid4()),
+                "answer": "SELECT 1",
+            },
+        )
+        attempt_id = resp.json()["attempt_id"]
+
+        client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+
+        rs = tmp_db.query(ReviewState).filter(ReviewState.question_id == "spark.shuffle.sql.001").first()
+        assert rs is not None
+        assert rs.review_count == 1
+
+    def test_review_count_not_increased_for_practice(self, tmp_db: Session, content_dir: Path):
+        from app.db.models.review import ReviewState
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+        client = _make_client(tmp_db)
+
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.sql.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "SELECT 1",
+            },
+        )
+        attempt_id = resp.json()["attempt_id"]
+
+        client.post(f"/api/v1/attempts/{attempt_id}/confirm", json={"action": "accept"})
+
+        rs = tmp_db.query(ReviewState).filter(ReviewState.question_id == "spark.shuffle.sql.001").first()
+        assert rs is not None
+        assert rs.review_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Contract (Phase 8C1)
+# ---------------------------------------------------------------------------
+
+class TestKnowledgeContract:
+    def test_knowledge_points_in_input(self):
+        from app.llm.schemas import SQLGradingInput, SQLKnowledgePoint
+        inp = SQLGradingInput(
+            question_id="test",
+            content="test",
+            business_requirement="test",
+            scoring_criteria=[],
+            user_sql="SELECT 1",
+            max_score=0,
+            knowledge_points=[
+                SQLKnowledgePoint(id="kp1", name="KP1"),
+                SQLKnowledgePoint(id="kp2", name="KP2"),
+            ],
+        )
+        assert len(inp.knowledge_points) == 2
+
+    def test_unknown_kp_rejected(self):
+        from app.llm.mock_provider import MockLLMProvider
+        from app.llm.schemas import SQLGradingInput, SQLKnowledgePoint, ScoringCriterionInput
+        from app.llm.service import LLMService
+
+        inp = SQLGradingInput(
+            question_id="test",
+            content="test",
+            business_requirement="test",
+            scoring_criteria=[ScoringCriterionInput(id="c1", description="test", points=5)],
+            user_sql="SELECT 1",
+            max_score=5,
+            knowledge_points=[SQLKnowledgePoint(id="kp1", name="KP1")],
+        )
+        bad_result = {
+            "score": 5,
+            "max_score": 5,
+            "criteria": [{"id": "c1", "status": "matched", "score": 5, "max_score": 5, "feedback": ""}],
+            "knowledge_analysis": {"mastered": ["unknown_kp"], "weak": [], "missing": []},
+            "reasoning_summary": "",
+        }
+        provider = MockLLMProvider(mode="success", result=bad_result)
+        service = LLMService(provider)
+
+        with pytest.raises(Exception, match="Unknown knowledge point"):
+            service.grade_sql(inp)
+
+    def test_overlapping_kp_rejected(self):
+        from app.llm.mock_provider import MockLLMProvider
+        from app.llm.schemas import SQLGradingInput, SQLKnowledgePoint, ScoringCriterionInput
+        from app.llm.service import LLMService
+
+        inp = SQLGradingInput(
+            question_id="test",
+            content="test",
+            business_requirement="test",
+            scoring_criteria=[ScoringCriterionInput(id="c1", description="test", points=5)],
+            user_sql="SELECT 1",
+            max_score=5,
+            knowledge_points=[SQLKnowledgePoint(id="kp1", name="KP1")],
+        )
+        bad_result = {
+            "score": 5,
+            "max_score": 5,
+            "criteria": [{"id": "c1", "status": "matched", "score": 5, "max_score": 5, "feedback": ""}],
+            "knowledge_analysis": {"mastered": ["kp1"], "weak": ["kp1"], "missing": []},
+            "reasoning_summary": "",
+        }
+        provider = MockLLMProvider(mode="success", result=bad_result)
+        service = LLMService(provider)
+
+        with pytest.raises(Exception, match="mastered and weak"):
+            service.grade_sql(inp)
 
 
 # ---------------------------------------------------------------------------

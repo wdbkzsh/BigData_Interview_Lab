@@ -13,13 +13,13 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.db.models.attempt import AIAssessment, Attempt
-from app.db.models.question import QuestionVersion
+from app.db.models.question import Question, QuestionVersion
 from app.llm.provider import (
     LLMInvalidResponseError,
     LLMProviderError,
     LLMTimeoutError,
 )
-from app.llm.schemas import ScoringCriterionInput, SQLGradingInput
+from app.llm.schemas import ScoringCriterionInput, SQLGradingInput, SQLKnowledgePoint
 from app.llm.service import LLMService
 
 
@@ -62,6 +62,41 @@ def grade_sql_attempt(
 
     max_score = sum(c.points for c in scoring_criteria)
 
+    # Get knowledge points (primary + related)
+    from app.db.models.knowledge import KnowledgePoint
+    from app.db.models.question import QuestionRelatedKnowledgePoint
+
+    kp_ids: set[str] = set()
+    kp_map: dict[str, str] = {}
+
+    # Primary KP
+    q = db.query(Question).filter(Question.id == attempt.question_id).first()
+    if q:
+        kp_ids.add(q.primary_knowledge_point_id)
+
+    # Related KPs
+    related = (
+        db.query(QuestionRelatedKnowledgePoint.knowledge_point_id)
+        .filter(QuestionRelatedKnowledgePoint.question_id == attempt.question_id)
+        .all()
+    )
+    for r in related:
+        kp_ids.add(r.knowledge_point_id)
+
+    # Get KP names
+    if kp_ids:
+        kps = (
+            db.query(KnowledgePoint.id, KnowledgePoint.name)
+            .filter(KnowledgePoint.id.in_(kp_ids))
+            .all()
+        )
+        kp_map = {kp.id: kp.name for kp in kps}
+
+    knowledge_points = [
+        SQLKnowledgePoint(id=kp_id, name=kp_map.get(kp_id, kp_id))
+        for kp_id in sorted(kp_ids)
+    ]
+
     grading_input = SQLGradingInput(
         question_id=attempt.question_id,
         content=payload.get("content", ""),
@@ -72,6 +107,7 @@ def grade_sql_attempt(
         expected_sql=payload.get("expected_sql"),
         user_sql=attempt.user_answer,
         max_score=max_score,
+        knowledge_points=knowledge_points,
     )
 
     # 3. Call LLM

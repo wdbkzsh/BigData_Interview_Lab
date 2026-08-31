@@ -67,7 +67,11 @@ class MockLLMProvider:
 
 
 def _default_result() -> dict:
-    """Default successful grading result."""
+    """Default successful grading result.
+
+    knowledge_analysis is empty by default — callers with specific
+    knowledge_points should provide a custom result.
+    """
     return {
         "score": 8,
         "max_score": 10,
@@ -88,8 +92,8 @@ def _default_result() -> dict:
             },
         ],
         "knowledge_analysis": {
-            "mastered": ["SQL基础"],
-            "weak": ["窗口函数"],
+            "mastered": [],
+            "weak": [],
             "missing": [],
         },
         "errors": [],

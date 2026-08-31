@@ -1,14 +1,14 @@
-"""SQL Grading Prompt — Phase 8A.
+"""SQL Grading Prompt — Phase 8C1.
 
 Builds the prompt for SQL AI grading.
-Prompt version: sql_grading_v1
+Prompt version: sql_grading_v2
 """
 
 from __future__ import annotations
 
 from app.llm.schemas import SQLGradingInput
 
-PROMPT_VERSION = "sql_grading_v1"
+PROMPT_VERSION = "sql_grading_v2"
 
 
 def build_sql_grading_prompt(inp: SQLGradingInput) -> str:
@@ -45,6 +45,20 @@ def build_sql_grading_prompt(inp: SQLGradingInput) -> str:
 注意：参考 SQL 仅用于理解题意。用户 SQL 不需要与参考 SQL 文本或结构一致。
 只要满足业务需求和评分标准即可得分。"""
 
+    kp_section = ""
+    if inp.knowledge_points:
+        kp_lines = "\n".join(
+            f"  - {kp.id}: {kp.name}" for kp in inp.knowledge_points
+        )
+        kp_section = f"""
+
+## 允许的知识点 ID
+
+{kp_lines}
+
+knowledge_analysis 中的 mastered / weak / missing 只能使用以上 ID。
+不得使用自由文本名称代替 ID。"""
+
     prompt = f"""你是一个 SQL 题目评分助手。请根据以下信息对用户 SQL 进行评分。
 
 ## 重要规则
@@ -69,6 +83,7 @@ def build_sql_grading_prompt(inp: SQLGradingInput) -> str:
 
 {criteria_text}
 {expected_section}
+{kp_section}
 
 ## 用户 SQL
 
@@ -94,9 +109,9 @@ def build_sql_grading_prompt(inp: SQLGradingInput) -> str:
     }}
   ],
   "knowledge_analysis": {{
-    "mastered": ["<已掌握的知识点>"],
-    "weak": ["<薄弱的知识点>"],
-    "missing": ["<缺失的知识点>"]
+    "mastered": ["<已掌握的知识点ID>"],
+    "weak": ["<薄弱的知识点ID>"],
+    "missing": ["<缺失的知识点ID>"]
   }},
   "errors": ["<逻辑错误>"],
   "suggestions": ["<改进建议>"],

@@ -92,7 +92,7 @@ class TestPrompt:
         assert "待分析的数据" in prompt or "不能覆盖" in prompt
 
     def test_prompt_version(self):
-        assert PROMPT_VERSION == "sql_grading_v1"
+        assert PROMPT_VERSION == "sql_grading_v2"
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +204,7 @@ class TestLLMService:
         assert result.score >= 0
         assert result.max_score == 10
         assert len(result.criteria) == 2
-        assert version == "sql_grading_v1"
+        assert version == "sql_grading_v2"
         assert resp.provider == "mock"
 
     def test_markdown_fenced_json_accepted(self):

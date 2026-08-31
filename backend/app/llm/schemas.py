@@ -1,7 +1,6 @@
-"""Structured schemas for SQL grading — Phase 8A.
+"""Structured schemas for SQL grading — Phase 8C1.
 
 Defines input/output structures for SQL AI grading.
-Does NOT write to database — that is Phase 8B.
 """
 
 from __future__ import annotations
@@ -23,6 +22,13 @@ class ScoringCriterionInput(BaseModel):
     points: int
 
 
+class SQLKnowledgePoint(BaseModel):
+    """A knowledge point allowed in SQL grading output."""
+
+    id: str
+    name: str
+
+
 class SQLGradingInput(BaseModel):
     """Input for SQL grading — passed to LLMService."""
 
@@ -35,6 +41,7 @@ class SQLGradingInput(BaseModel):
     expected_sql: Optional[str] = None
     user_sql: str
     max_score: int
+    knowledge_points: list[SQLKnowledgePoint] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
