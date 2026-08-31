@@ -1,12 +1,14 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { fetchQuestionDetail, submitAttempt } from "@/lib/api"
+import { fetchQuestionDetailAtRevision, submitAttempt } from "@/lib/api"
 import type { QuestionDetail, AttemptResult } from "@/lib/types"
 import styles from "./ChoiceQuestion.module.css"
 
 interface Props {
   questionId: string
+  revision?: number
+  attemptType?: "new" | "review" | "practice"
   onDone: () => void
 }
 
@@ -18,7 +20,7 @@ const DIFFICULTY_LABELS: Record<number, string> = {
   5: "★★★★★",
 }
 
-export default function ChoiceQuestion({ questionId, onDone }: Props) {
+export default function ChoiceQuestion({ questionId, revision, attemptType = "practice", onDone }: Props) {
   const [question, setQuestion] = useState<QuestionDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -39,19 +41,19 @@ export default function ChoiceQuestion({ questionId, onDone }: Props) {
     client_request_id: string
   } | null>(null)
 
-  // Load question detail
-  const loadQuestion = useCallback((id: string) => {
+  // Load question detail (optionally at specific revision)
+  const loadQuestion = useCallback((id: string, rev?: number) => {
     setLoading(true)
     setLoadError(null)
-    fetchQuestionDetail(id)
+    fetchQuestionDetailAtRevision(id, rev)
       .then((data) => setQuestion(data))
       .catch((err) => setLoadError(err.message))
       .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
-    loadQuestion(questionId)
-  }, [questionId, loadQuestion])
+    loadQuestion(questionId, revision)
+  }, [questionId, revision, loadQuestion])
 
   // Reset state for a new question
   useEffect(() => {
@@ -84,7 +86,7 @@ export default function ChoiceQuestion({ questionId, onDone }: Props) {
     try {
       const res = await submitAttempt(question.id, {
         question_revision: payload.question_revision,
-        attempt_type: "practice",
+        attempt_type: attemptType,
         client_request_id: payload.client_request_id,
         answer: payload.answer,
       })

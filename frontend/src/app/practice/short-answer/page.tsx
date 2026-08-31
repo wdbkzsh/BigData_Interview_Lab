@@ -11,7 +11,11 @@ import styles from "./page.module.css"
 function ShortAnswerPracticeContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+
   const questionId = searchParams.get("id")
+  const revision = searchParams.get("revision") ? Number(searchParams.get("revision")) : undefined
+  const attemptType = (searchParams.get("attempt_type") as "new" | "review" | "practice") || "practice"
+  const source = searchParams.get("source")
 
   const [questions, setQuestions] = useState<QuestionListItem[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
@@ -59,6 +63,10 @@ function ShortAnswerPracticeContent() {
 
   const handleDone = useCallback(() => {
     setPendingAttemptId(null)
+    if (source === "daily") {
+      router.push("/")
+      return
+    }
     const idx = questions.findIndex((q) => q.id === questionId)
     const nextIdx = idx + 1
     if (nextIdx < questions.length) {
@@ -66,11 +74,15 @@ function ShortAnswerPracticeContent() {
     } else {
       router.push("/practice/short-answer")
     }
-  }, [questions, questionId, router])
+  }, [questions, questionId, router, source])
 
   const handleBackToBank = useCallback(() => {
-    router.push("/practice/short-answer")
-  }, [router])
+    if (source === "daily") {
+      router.push("/")
+    } else {
+      router.push("/practice/short-answer")
+    }
+  }, [router, source])
 
   // --- Render ---
 
@@ -104,7 +116,6 @@ function ShortAnswerPracticeContent() {
           <h1 className={styles.title}>问答题题库</h1>
         </header>
 
-        {/* Domain filter */}
         {domains.length > 0 && (
           <div className={styles.domainFilter}>
             <button
@@ -135,6 +146,8 @@ function ShortAnswerPracticeContent() {
   }
 
   // Has questionId → show question
+  const backLabel = source === "daily" ? "← 返回今日任务" : "← 返回题库"
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -144,13 +157,15 @@ function ShortAnswerPracticeContent() {
           onClick={handleBackToBank}
           type="button"
         >
-          ← 返回题库
+          {backLabel}
         </button>
       </header>
       <div className={styles.content}>
         <ShortAnswerQuestion
-          key={pendingAttemptId ? `recovery-${pendingAttemptId}` : questionId}
+          key={pendingAttemptId ? `recovery-${pendingAttemptId}` : `${questionId}-${revision ?? "current"}`}
           questionId={questionId}
+          revision={revision}
+          attemptType={attemptType}
           pendingAttemptId={pendingAttemptId}
           onDone={handleDone}
         />

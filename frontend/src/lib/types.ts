@@ -164,6 +164,74 @@ export interface PendingAttemptsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+
+export interface DashboardToday {
+  date: string
+  task_id: number
+  status: string
+  review_total: number
+  review_completed: number
+  review_skipped: number
+  new_total: number
+  new_completed: number
+  new_skipped: number
+}
+
+export interface DashboardReview {
+  due_count: number
+  overdue_count: number
+}
+
+export interface DashboardWeek {
+  completed_attempts: number
+  study_days: number
+  choice_accuracy: number | null
+}
+
+export interface DashboardPending {
+  short_answer_self_assessment: number
+  sql_assessment: number
+}
+
+export interface DashboardData {
+  today: DashboardToday
+  review: DashboardReview
+  week: DashboardWeek
+  pending: DashboardPending
+  weak_knowledge_points: { id: string; name: string; mastery_score: number }[]
+}
+
+// ---------------------------------------------------------------------------
+// DailyTask
+// ---------------------------------------------------------------------------
+
+export interface DailyTaskItem {
+  id: number
+  question_id: string
+  question_revision: number
+  title: string | null
+  question_type: string
+  item_type: string // "new" | "review"
+  status: string // "pending" | "completed" | "skipped"
+  sort_order: number
+  due_date_snapshot: string | null
+  domain: { id: string; name: string | null } | null
+  primary_knowledge_point: { id: string; name: string | null } | null
+}
+
+export interface DailyTaskData {
+  id: number
+  task_date: string
+  status: string
+  new_question_target: number
+  generated_at: string | null
+  completed_at: string | null
+  items: DailyTaskItem[]
+}
+
+// ---------------------------------------------------------------------------
 // ReviewState
 // ---------------------------------------------------------------------------
 

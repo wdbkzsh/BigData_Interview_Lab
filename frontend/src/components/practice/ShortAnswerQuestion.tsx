@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import {
-  fetchQuestionDetail,
+  fetchQuestionDetailAtRevision,
   submitAttempt,
   fetchAttemptDetail,
   submitSelfAssessment,
@@ -17,6 +17,8 @@ import styles from "./ShortAnswerQuestion.module.css"
 
 interface Props {
   questionId: string
+  revision?: number
+  attemptType?: "new" | "review" | "practice"
   pendingAttemptId?: number | null
   onDone: () => void
 }
@@ -47,6 +49,8 @@ type Phase =
 
 export default function ShortAnswerQuestion({
   questionId,
+  revision,
+  attemptType = "practice",
   pendingAttemptId,
   onDone,
 }: Props) {
@@ -67,11 +71,11 @@ export default function ShortAnswerQuestion({
 
   const [clientRequestId] = useState(() => crypto.randomUUID())
 
-  // Load question detail
-  const loadQuestion = useCallback((id: string) => {
+  // Load question detail (optionally at specific revision)
+  const loadQuestion = useCallback((id: string, rev?: number) => {
     setPhase("loading")
     setError(null)
-    fetchQuestionDetail(id)
+    fetchQuestionDetailAtRevision(id, rev)
       .then((data) => {
         setQuestion(data)
         setPhase("loaded")
@@ -88,8 +92,8 @@ export default function ShortAnswerQuestion({
     setError(null)
     fetchAttemptDetail(attemptId)
       .then((detail) => {
-        // Load question detail for display
-        fetchQuestionDetail(detail.question_id)
+        // Load question detail for display (at the revision the attempt was made)
+        fetchQuestionDetailAtRevision(detail.question_id, detail.question_revision)
           .then((q) => {
             setQuestion(q)
             setUserAnswer(detail.answer)
@@ -123,9 +127,9 @@ export default function ShortAnswerQuestion({
     if (pendingAttemptId) {
       recoverAttempt(pendingAttemptId)
     } else {
-      loadQuestion(questionId)
+      loadQuestion(questionId, revision)
     }
-  }, [questionId, pendingAttemptId, loadQuestion, recoverAttempt])
+  }, [questionId, revision, pendingAttemptId, loadQuestion, recoverAttempt])
 
   // Submit answer
   const handleSubmit = async () => {
@@ -146,7 +150,7 @@ export default function ShortAnswerQuestion({
     try {
       const result = await submitAttempt(question.id, {
         question_revision: payload.question_revision,
-        attempt_type: "practice",
+        attempt_type: attemptType,
         client_request_id: payload.client_request_id,
         answer: payload.answer,
       })

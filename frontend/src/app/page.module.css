@@ -1,150 +1,227 @@
 .page {
-  --background: #fafafa;
-  --foreground: #fff;
-
-  --text-primary: #000;
-  --text-secondary: #666;
-
-  --button-primary-hover: #383838;
-  --button-secondary-hover: #f2f2f2;
-  --button-secondary-border: #ebebeb;
-
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-geist-sans);
-  background-color: var(--background);
-}
-
-.main {
-  display: flex;
-  flex: 1;
-  width: 100%;
   max-width: 800px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  background-color: var(--foreground);
-  padding: 120px 60px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
-.intro {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  gap: 24px;
-}
-
-.intro h1 {
-  max-width: 320px;
-  font-size: 40px;
+.title {
+  font-size: 24px;
   font-weight: 600;
-  line-height: 48px;
-  letter-spacing: -2.4px;
-  text-wrap: balance;
-  color: var(--text-primary);
+  margin-bottom: 32px;
 }
 
-.intro p {
-  max-width: 440px;
-  font-size: 18px;
-  line-height: 32px;
-  text-wrap: balance;
-  color: var(--text-secondary);
-}
-
-.intro a {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.ctas {
-  display: flex;
-  flex-direction: row;
-  width: 100%;
-  max-width: 440px;
-  gap: 16px;
+.loading,
+.error {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary, #999);
   font-size: 14px;
 }
 
-.ctas a {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 40px;
-  padding: 0 16px;
-  border-radius: 128px;
-  border: 1px solid transparent;
-  transition: 0.2s;
+.error {
+  color: #c62828;
+}
+
+.retryBtn {
+  display: block;
+  margin: 16px auto 0;
+  padding: 8px 20px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
   cursor: pointer;
-  width: fit-content;
+}
+
+.section {
+  margin-bottom: 28px;
+}
+
+.sectionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-secondary, #666);
+}
+
+.statsRow {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.statCard {
+  flex: 1;
+  min-width: 120px;
+  padding: 14px 16px;
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 8px;
+}
+
+.statLabel {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  margin-bottom: 4px;
+}
+
+.statValue {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.statSub {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  margin-top: 2px;
+}
+
+.emptyText {
+  color: var(--text-secondary, #999);
+  font-size: 14px;
+}
+
+.pendingNotice {
+  padding: 10px 14px;
+  background: rgba(0, 112, 243, 0.08);
+  border: 1px solid rgba(0, 112, 243, 0.2);
+  border-radius: 6px;
+  font-size: 14px;
+  color: #0070f3;
+}
+
+.itemGroup {
+  margin-bottom: 16px;
+}
+
+.groupTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary, #666);
+  margin-bottom: 8px;
+}
+
+.taskItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.12);
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.taskItemDone {
+  opacity: 0.6;
+}
+
+.taskItemLeft {
+  flex: 1;
+  min-width: 0;
+}
+
+.taskItemTitle {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskItemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+
+.taskItemActions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.actionBtn {
+  padding: 4px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 5px;
+  background: transparent;
+  font-size: 12px;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.actionBtn:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.skipBtn {
+  padding: 4px 10px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 5px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.skipBtn:hover {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.restoreBtn {
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 112, 243, 0.3);
+  border-radius: 5px;
+  background: transparent;
+  font-size: 12px;
+  color: #0070f3;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.restoreBtn:hover {
+  background: rgba(0, 112, 243, 0.05);
+}
+
+.sqlDisabled {
+  font-size: 12px;
+  color: var(--text-secondary, #bbb);
+  padding: 4px 10px;
+}
+
+.completedBadge {
+  font-size: 12px;
+  color: #2e7d32;
   font-weight: 500;
 }
 
-a.primary {
-  background: var(--text-primary);
-  color: var(--background);
-  gap: 8px;
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(128, 128, 128, 0.15);
 }
 
-a.secondary {
-  border-color: var(--button-secondary-border);
-}
-
-/* Enable hover only on non-touch devices */
-@media (hover: hover) and (pointer: fine) {
-  a.primary:hover {
-    background: var(--button-primary-hover);
-    border-color: transparent;
-  }
-
-  a.secondary:hover {
-    background: var(--button-secondary-hover);
-    border-color: transparent;
-  }
-}
-
-@media (max-width: 600px) {
-  .main {
-    padding: 48px 24px;
-  }
-
-  .intro {
-    gap: 16px;
-  }
-
-  .intro h1 {
-    font-size: 32px;
-    line-height: 40px;
-    letter-spacing: -1.92px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .logo {
-    filter: invert();
-  }
-
-  .page {
-    --background: #000;
-    --foreground: #000;
-
-    --text-primary: #ededed;
-    --text-secondary: #999;
-
-    --button-primary-hover: #ccc;
-    --button-secondary-hover: #1a1a1a;
-    --button-secondary-border: #1a1a1a;
-  }
-}
-
-.code {
-  font-family: var(--font-geist-mono);
-  font-size: 0.9em;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  padding: 0.1em 0.4em;
+.navLink {
+  padding: 8px 16px;
+  border: 1px solid rgba(128, 128, 128, 0.25);
   border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.navLink:hover {
+  background: rgba(128, 128, 128, 0.08);
 }

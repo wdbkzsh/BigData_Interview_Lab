@@ -11,7 +11,11 @@ import styles from "./page.module.css"
 function ChoicePracticeContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
+
   const questionId = searchParams.get("id")
+  const revision = searchParams.get("revision") ? Number(searchParams.get("revision")) : undefined
+  const attemptType = (searchParams.get("attempt_type") as "new" | "review" | "practice") || "practice"
+  const source = searchParams.get("source") // "daily" or null
 
   const [questions, setQuestions] = useState<QuestionListItem[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
@@ -26,9 +30,9 @@ function ChoicePracticeContent() {
       .catch(() => {})
   }, [])
 
-  // Load question bank when domain changes
+  // Load question bank when domain changes (not when viewing a question)
   useEffect(() => {
-    if (questionId) return // Don't reload bank when viewing a question
+    if (questionId) return
     setLoading(true)
     fetchQuestions({
       question_type: "choice",
@@ -41,8 +45,14 @@ function ChoicePracticeContent() {
       .finally(() => setLoading(false))
   }, [selectedDomain, questionId])
 
-  // Handle "next question"
+  // Handle "next question" (only in question bank mode)
   const handleDone = useCallback(() => {
+    if (source === "daily") {
+      // DailyTask: return to dashboard
+      router.push("/")
+      return
+    }
+    // Question bank: go to next in list
     const idx = questions.findIndex((q) => q.id === questionId)
     const nextIdx = idx + 1
     if (nextIdx < questions.length) {
@@ -50,11 +60,15 @@ function ChoicePracticeContent() {
     } else {
       router.push("/practice/choice")
     }
-  }, [questions, questionId, router])
+  }, [questions, questionId, router, source])
 
   const handleBackToBank = useCallback(() => {
-    router.push("/practice/choice")
-  }, [router])
+    if (source === "daily") {
+      router.push("/")
+    } else {
+      router.push("/practice/choice")
+    }
+  }, [router, source])
 
   // --- Render ---
 
@@ -88,7 +102,6 @@ function ChoicePracticeContent() {
           <h1 className={styles.title}>选择题题库</h1>
         </header>
 
-        {/* Domain filter */}
         {domains.length > 0 && (
           <div className={styles.domainFilter}>
             <button
@@ -119,6 +132,8 @@ function ChoicePracticeContent() {
   }
 
   // Has questionId → show question
+  const backLabel = source === "daily" ? "← 返回今日任务" : "← 返回题库"
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -128,13 +143,15 @@ function ChoicePracticeContent() {
           onClick={handleBackToBank}
           type="button"
         >
-          ← 返回题库
+          {backLabel}
         </button>
       </header>
       <div className={styles.content}>
         <ChoiceQuestion
-          key={questionId}
+          key={`${questionId}-${revision ?? "current"}`}
           questionId={questionId}
+          revision={revision}
+          attemptType={attemptType}
           onDone={handleDone}
         />
       </div>

@@ -17,6 +17,9 @@ import type {
   ManualMasteryBody,
   WrongBookResponse,
   WrongBookPreferenceBody,
+  DashboardData,
+  DailyTaskData,
+  DailyTaskItem,
 } from "./types"
 
 const API_BASE_URL =
@@ -217,4 +220,55 @@ export async function setWrongBookPreference(
       body: JSON.stringify(body),
     }
   )
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/dashboard */
+export async function fetchDashboard(): Promise<DashboardData> {
+  return apiFetch<DashboardData>("/api/v1/dashboard")
+}
+
+// ---------------------------------------------------------------------------
+// DailyTask
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/daily-tasks/today */
+export async function fetchTodayTask(): Promise<DailyTaskData> {
+  return apiFetch<DailyTaskData>("/api/v1/daily-tasks/today")
+}
+
+/** POST /api/v1/daily-task-items/{id}/skip */
+export async function skipDailyTaskItem(
+  itemId: number
+): Promise<DailyTaskItem> {
+  return apiFetch<DailyTaskItem>(
+    `/api/v1/daily-task-items/${itemId}/skip`,
+    { method: "POST" }
+  )
+}
+
+/** POST /api/v1/daily-task-items/{id}/restore */
+export async function restoreDailyTaskItem(
+  itemId: number
+): Promise<DailyTaskItem> {
+  return apiFetch<DailyTaskItem>(
+    `/api/v1/daily-task-items/${itemId}/restore`,
+    { method: "POST" }
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Question Detail with revision
+// ---------------------------------------------------------------------------
+
+/** GET /api/v1/questions/{id}?revision=R */
+export async function fetchQuestionDetailAtRevision(
+  questionId: string,
+  revision?: number
+): Promise<QuestionDetail> {
+  const qs = revision ? `?revision=${revision}` : ""
+  return apiFetch<QuestionDetail>(`/api/v1/questions/${questionId}${qs}`)
 }
