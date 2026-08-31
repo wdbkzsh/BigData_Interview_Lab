@@ -21,5 +21,12 @@ class Settings(BaseSettings):
     APP_TIMEZONE: str = "Asia/Shanghai"
     DATABASE_URL: str = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
+    # LLM
+    LLM_PROVIDER: str = "mock"
+    LLM_MODEL: str = ""
+    LLM_API_KEY: str = ""
+    LLM_BASE_URL: str = ""
+    LLM_TIMEOUT_SECONDS: int = 30
+
 
 settings = Settings()
