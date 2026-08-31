@@ -1,7 +1,8 @@
-"""DailyTask Service — Phase 7A.
+"""DailyTask Service — Phase 7B.
 
 Generates and persists daily task snapshots. Supports skip/restore.
-Does NOT handle Attempt completion (Phase 7B) or Dashboard (Phase 7C).
+Provides completion helper for Attempt integration.
+Does NOT handle Dashboard (Phase 7C).
 """
 
 from __future__ import annotations
@@ -391,8 +392,69 @@ def restore_item(db: Session, item_id: int) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Response builders
+# Completion helper — called by attempt_service within its transaction
 # ---------------------------------------------------------------------------
+
+def complete_item_for_attempt(
+    db: Session,
+    *,
+    attempt_id: int,
+    question_id: str,
+    question_revision: int,
+    attempt_type: str,
+    attempt_created_at,
+) -> None:
+    """Complete the matching DailyTaskItem for a new/review Attempt.
+
+    Must be called within the attempt_service transaction (no commit here).
+    If no matching item found, silently does nothing.
+    Only completes items with status == pending.
+    """
+    # Only new/review can complete DailyTaskItems
+    if attempt_type not in ("new", "review"):
+        return
+
+    # Find the DailyTask for the business date when the attempt was created
+    tz = ZoneInfo(settings.APP_TIMEZONE)
+    if attempt_created_at is not None:
+        # Convert attempt timestamp to business date
+        if hasattr(attempt_created_at, 'astimezone'):
+            biz_date = attempt_created_at.astimezone(tz).date()
+        else:
+            # naive datetime — assume UTC then convert
+            from datetime import datetime as dt_cls, timezone as tz_mod
+            aware = attempt_created_at.replace(tzinfo=tz_mod.utc)
+            biz_date = aware.astimezone(tz).date()
+    else:
+        biz_date = get_business_today()
+
+    task = db.query(DailyTask).filter(DailyTask.task_date == biz_date).first()
+    if not task:
+        return
+
+    # Find matching item: question_id + question_revision + item_type + pending
+    item = (
+        db.query(DailyTaskItem)
+        .filter(
+            DailyTaskItem.daily_task_id == task.id,
+            DailyTaskItem.question_id == question_id,
+            DailyTaskItem.question_revision == question_revision,
+            DailyTaskItem.item_type == attempt_type,
+            DailyTaskItem.status == "pending",
+        )
+        .first()
+    )
+    if not item:
+        return
+
+    # Complete the item
+    item.status = "completed"
+    item.completed_attempt_id = attempt_id
+
+    # Recompute aggregate status
+    task.status = _compute_aggregate_status(task.id, db)
+    if task.status == "completed":
+        task.completed_at = datetime.now(timezone.utc)
 
 def _build_task_response(db: Session, task: DailyTask) -> dict[str, Any]:
     """Build DailyTask response dict."""

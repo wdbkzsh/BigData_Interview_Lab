@@ -171,7 +171,20 @@ def create_attempt(
         )
         attempt.review_applied_at = now
 
-    # 8. Single commit for everything
+    # 8. Complete DailyTaskItem if attempt is immediately completed (Choice)
+    # Short Answer: awaiting_self_assessment — completion deferred to self-assessment
+    if attempt.status == "completed" and attempt_type in ("new", "review"):
+        from app.services.daily_task_service import complete_item_for_attempt
+        complete_item_for_attempt(
+            db,
+            attempt_id=attempt.id,
+            question_id=attempt.question_id,
+            question_revision=attempt.question_revision,
+            attempt_type=attempt_type,
+            attempt_created_at=attempt.created_at,
+        )
+
+    # 9. Single commit for everything
     try:
         db.commit()
         db.refresh(attempt)
@@ -391,6 +404,18 @@ def submit_self_assessment(
             db.add(new_rs)
 
         attempt.review_applied_at = now
+
+        # Complete DailyTaskItem if attempt was new/review
+        if attempt.attempt_type in ("new", "review"):
+            from app.services.daily_task_service import complete_item_for_attempt
+            complete_item_for_attempt(
+                db,
+                attempt_id=attempt.id,
+                question_id=attempt.question_id,
+                question_revision=attempt.question_revision,
+                attempt_type=attempt.attempt_type,
+                attempt_created_at=attempt.created_at,
+            )
 
         try:
             db.commit()
