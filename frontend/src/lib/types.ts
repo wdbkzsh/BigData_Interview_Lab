@@ -103,6 +103,33 @@ export interface AttemptSubmitBody {
   answer: string
 }
 
+export interface CriterionResult {
+  id: string
+  status: string
+  score: number
+  max_score: number
+  feedback: string
+}
+
+export interface KnowledgeAnalysis {
+  mastered: string[]
+  weak: string[]
+  missing: string[]
+}
+
+export interface AssessmentData {
+  assessment_id: number
+  status: string
+  raw_score: number | null
+  max_score: number | null
+  criteria?: CriterionResult[]
+  knowledge_analysis?: KnowledgeAnalysis
+  errors?: string[]
+  suggestions?: string[]
+  reasoning_summary?: string
+  error_message?: string
+}
+
 export interface AttemptResult {
   attempt_id: number
   question_id: string
@@ -114,6 +141,25 @@ export interface AttemptResult {
   correct_answer: string | null
   reference_answer: string | null
   explanation: string | null
+  // SQL fields
+  assessment?: AssessmentData
+  expected_sql?: string
+}
+
+export interface SQLConfirmBody {
+  action: "accept" | "adjust"
+  final_score?: number
+}
+
+export interface SQLConfirmResult {
+  attempt_id: number
+  status: string
+  final_score: number | null
+  max_score: number | null
+  final_score_source: string | null
+  mastery_state: string | null
+  next_review_date: string | null
+  policy_version: string | null
 }
 
 // ---------------------------------------------------------------------------

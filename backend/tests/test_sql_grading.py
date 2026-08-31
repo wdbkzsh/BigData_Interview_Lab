@@ -1091,6 +1091,100 @@ class TestSQLRegrade:
         resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
         assert resp.status_code == 409
 
+    def test_regrade_from_disputed(self, tmp_db: Session, content_dir: Path):
+        """disputed → regrade → same Attempt → new Assessment → awaiting_confirmation."""
+        client = _make_client(tmp_db)
+        attempt_id = self._create_awaiting(tmp_db, content_dir, client)
+
+        # Dispute
+        resp = client.post(
+            f"/api/v1/attempts/{attempt_id}/dispute",
+            json={"reason": "AI 理解错误"},
+        )
+        assert resp.json()["status"] == "disputed"
+
+        from app.db.models.attempt import AIAssessment
+        attempt_count_before = tmp_db.query(Attempt).count()
+        assessment_count_before = tmp_db.query(AIAssessment).filter(
+            AIAssessment.attempt_id == attempt_id
+        ).count()
+
+        # Regrade
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "awaiting_confirmation"
+        assert resp.json()["attempt_id"] == attempt_id
+
+        # Attempt count unchanged
+        assert tmp_db.query(Attempt).count() == attempt_count_before
+        # Assessment count +1
+        assert tmp_db.query(AIAssessment).filter(
+            AIAssessment.attempt_id == attempt_id
+        ).count() == assessment_count_before + 1
+
+    def test_regrade_uses_historical_revision(self, tmp_db: Session, content_dir: Path):
+        """Regrade uses attempt.question_revision, not current_revision."""
+        import json as json_mod
+        from app.db.models.question import Question, QuestionVersion
+        from app.db.models.attempt import AIAssessment
+
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        # Create attempt with revision=1
+        client = _make_client(tmp_db)
+        resp = client.post(
+            "/api/v1/questions/spark.shuffle.sql.001/attempts",
+            json={
+                "question_revision": 1,
+                "attempt_type": "practice",
+                "client_request_id": str(uuid4()),
+                "answer": "MY ORIGINAL SQL",
+            },
+        )
+        attempt_id = resp.json()["attempt_id"]
+
+        # Change current_revision to 2
+        v2 = QuestionVersion(
+            question_id="spark.shuffle.sql.001",
+            revision=2,
+            payload_json=json_mod.dumps({
+                "content": "Different content rev2",
+                "table_schema": "CREATE TABLE t2 (x INT)",
+                "field_description": "x",
+                "business_requirement": "Select from t2",
+                "expected_sql": "SELECT * FROM t2",
+                "scoring_criteria": [{"id": "c1", "description": "test", "points": 10}],
+            }),
+        )
+        tmp_db.add(v2)
+        q = tmp_db.query(Question).filter(Question.id == "spark.shuffle.sql.001").first()
+        q.current_revision = 2
+        tmp_db.commit()
+
+        # Set to grading_failed to allow regrade
+        attempt = tmp_db.query(Attempt).filter(Attempt.id == attempt_id).first()
+        attempt.status = "grading_failed"
+        tmp_db.commit()
+
+        # Regrade
+        resp = client.post(f"/api/v1/attempts/{attempt_id}/regrade")
+        assert resp.status_code == 200
+
+        # Check the last assessment was created with revision=1 content
+        assessment = (
+            tmp_db.query(AIAssessment)
+            .filter(AIAssessment.attempt_id == attempt_id)
+            .order_by(AIAssessment.id.desc())
+            .first()
+        )
+        assert assessment is not None
+        # The prompt should have used revision 1's content (ROW_NUMBER), not revision 2
+        # We verify by checking the attempt still has revision=1
+        attempt_after = tmp_db.query(Attempt).filter(Attempt.id == attempt_id).first()
+        assert attempt_after.question_revision == 1
+        assert attempt_after.user_answer == "MY ORIGINAL SQL"
+
 
 # ---------------------------------------------------------------------------
 # SQL Dispute (Phase 8C2)

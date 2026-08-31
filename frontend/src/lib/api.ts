@@ -18,6 +18,8 @@ import type {
   WrongBookResponse,
   WrongBookPreferenceBody,
   DashboardData,
+  SQLConfirmBody,
+  SQLConfirmResult,
   DailyTaskData,
   DailyTaskItem,
 } from "./types"
@@ -271,4 +273,23 @@ export async function fetchQuestionDetailAtRevision(
 ): Promise<QuestionDetail> {
   const qs = revision ? `?revision=${revision}` : ""
   return apiFetch<QuestionDetail>(`/api/v1/questions/${questionId}${qs}`)
+}
+
+// ---------------------------------------------------------------------------
+// SQL Confirm
+// ---------------------------------------------------------------------------
+
+/** POST /api/v1/attempts/{id}/confirm */
+export async function confirmSQLAttempt(
+  attemptId: number,
+  body: SQLConfirmBody
+): Promise<SQLConfirmResult> {
+  return apiFetch<SQLConfirmResult>(
+    `/api/v1/attempts/${attemptId}/confirm`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  )
 }

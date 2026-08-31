@@ -195,6 +195,7 @@ export default function Home() {
       <nav className={styles.nav}>
         <Link href="/practice/choice" className={styles.navLink}>选择题题库 →</Link>
         <Link href="/practice/short-answer" className={styles.navLink}>问答题题库 →</Link>
+        <Link href="/practice/sql" className={styles.navLink}>SQL 题库 →</Link>
         <Link href="/wrong-book" className={styles.navLink}>错题本 →</Link>
         <Link href="/knowledge" className={styles.navLink}>知识库 →</Link>
       </nav>

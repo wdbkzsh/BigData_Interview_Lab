@@ -1,0 +1,352 @@
+.container {
+  max-width: 800px;
+}
+
+.meta {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-secondary, #999);
+  margin-bottom: 16px;
+}
+
+.section {
+  margin-bottom: 20px;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.sectionContent {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary, #666);
+  white-space: pre-wrap;
+}
+
+.codeBlock {
+  font-family: var(--font-geist-mono), "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 12px 16px;
+  background: rgba(128, 128, 128, 0.06);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 6px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.sqlInput {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  font-family: var(--font-geist-mono), "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  margin-bottom: 16px;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.submitButton,
+.retryButton {
+  padding: 10px 24px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.submitButton:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.submitButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.processing {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-secondary, #999);
+  font-size: 14px;
+}
+
+.submitError {
+  padding: 12px 16px;
+  border: 1px solid #c62828;
+  border-radius: 6px;
+  color: #c62828;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.userSqlReadonly {
+  margin-bottom: 20px;
+}
+
+.aiScore {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.aiScoreLabel {
+  font-size: 14px;
+  color: var(--text-secondary, #666);
+}
+
+.aiScoreValue {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.criteriaList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.criterionItem {
+  padding: 10px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.12);
+  border-radius: 6px;
+}
+
+.criterionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.criterionId {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.criterionStatus {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 4px;
+}
+
+.statusMatched {
+  background: rgba(46, 125, 50, 0.1);
+  color: #2e7d32;
+}
+
+.statusPartial {
+  background: rgba(255, 152, 0, 0.1);
+  color: #e65100;
+}
+
+.statusMissing {
+  background: rgba(198, 40, 40, 0.1);
+  color: #c62828;
+}
+
+.criterionScore {
+  font-size: 13px;
+  color: var(--text-secondary, #999);
+  margin-left: auto;
+}
+
+.criterionFeedback {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.kpLine {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.kpLabel {
+  font-weight: 500;
+  margin-right: 6px;
+}
+
+.listItems {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary, #666);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  margin-top: 6px;
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.acceptButton {
+  padding: 10px 24px;
+  border: 1px solid #2e7d32;
+  border-radius: 6px;
+  background: #2e7d32;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.acceptButton:hover:not(:disabled) {
+  background: #1b5e20;
+}
+
+.acceptButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.adjustGroup {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.adjustInput {
+  width: 80px;
+  padding: 8px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.adjustButton {
+  padding: 10px 20px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.adjustButton:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.adjustButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.completedSection {
+  padding: 20px;
+  border: 1px solid #2e7d32;
+  border-radius: 8px;
+  margin-top: 16px;
+}
+
+.completedTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2e7d32;
+  margin-bottom: 16px;
+}
+
+.completedGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.completedField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.completedLabel {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+
+.completedValue {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.backButton {
+  padding: 8px 20px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 8px;
+}
+
+.backButton:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.feedback {
+  padding: 20px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  margin-top: 16px;
+}
+
+.feedbackTitle {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.feedbackText {
+  font-size: 14px;
+  color: var(--text-secondary, #666);
+  margin-bottom: 12px;
+}
+
+.loading,
+.error {
+  padding: 40px 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-secondary, #999);
+}
+
+.error {
+  color: #c62828;
+}
