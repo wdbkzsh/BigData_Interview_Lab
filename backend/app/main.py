@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.attempts import router as attempts_router
+from app.api.daily_tasks import router as daily_tasks_router
 from app.api.knowledge import router as knowledge_router
 from app.api.questions import router as questions_router
 from app.api.reviews import router as reviews_router
@@ -19,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(attempts_router)
+app.include_router(daily_tasks_router)
 app.include_router(knowledge_router)
 app.include_router(questions_router)
 app.include_router(reviews_router)
