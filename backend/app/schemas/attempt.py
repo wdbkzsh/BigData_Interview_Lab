@@ -1,9 +1,9 @@
-"""Pydantic schemas for Attempt API — Task 5.1 + Phase 5 self-assessment."""
+"""Pydantic schemas for Attempt API — Phase 8B."""
 
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -16,6 +16,21 @@ class AttemptSubmitRequest(BaseModel):
     attempt_type: Literal["new", "review", "practice"]
     client_request_id: UUID
     answer: str
+
+
+class AssessmentData(BaseModel):
+    """AI assessment data in attempt response."""
+
+    assessment_id: int
+    status: str
+    raw_score: Optional[float] = None
+    max_score: Optional[float] = None
+    criteria: Optional[list[dict[str, Any]]] = None
+    knowledge_analysis: Optional[dict[str, Any]] = None
+    errors: Optional[list[str]] = None
+    suggestions: Optional[list[str]] = None
+    reasoning_summary: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class AttemptSubmitResponse(BaseModel):
@@ -31,6 +46,9 @@ class AttemptSubmitResponse(BaseModel):
     correct_answer: Optional[str] = None
     reference_answer: Optional[str] = None
     explanation: Optional[str] = None
+    # SQL fields
+    assessment: Optional[AssessmentData] = None
+    expected_sql: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +94,9 @@ class AttemptDetailResponse(BaseModel):
     self_assessed_mastery_state: Optional[str] = None
     reference_answer: Optional[str] = None
     explanation: Optional[str] = None
+    # SQL recovery
+    assessment: Optional[AssessmentData] = None
+    expected_sql: Optional[str] = None
 
 
 class PendingAttemptItem(BaseModel):
@@ -90,3 +111,4 @@ class PendingAttemptsResponse(BaseModel):
     """Response for GET /api/v1/attempts/pending."""
 
     short_answer_self_assessment: list[PendingAttemptItem]
+    sql_confirmation: list[PendingAttemptItem]

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.attempt import (
+    AssessmentData,
     AttemptDetailResponse,
     AttemptSubmitRequest,
     AttemptSubmitResponse,
@@ -38,6 +39,11 @@ router = APIRouter(prefix="/api/v1")
 
 def _build_submit_response(result: dict) -> AttemptSubmitResponse:
     """Build AttemptSubmitResponse from service result dict."""
+    assessment_data = None
+    raw_assessment = result.get("assessment")
+    if raw_assessment:
+        assessment_data = AssessmentData(**raw_assessment)
+
     return AttemptSubmitResponse(
         attempt_id=result["attempt_id"],
         question_id=result["question_id"],
@@ -49,6 +55,8 @@ def _build_submit_response(result: dict) -> AttemptSubmitResponse:
         correct_answer=result.get("correct_answer"),
         reference_answer=result.get("reference_answer"),
         explanation=result.get("explanation"),
+        assessment=assessment_data,
+        expected_sql=result.get("expected_sql"),
     )
 
 

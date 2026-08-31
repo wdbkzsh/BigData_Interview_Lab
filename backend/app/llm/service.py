@@ -94,6 +94,12 @@ def _extract_json(content: str) -> dict:
 
 def _validate_against_input(result: SQLGradingResult, inp: SQLGradingInput) -> None:
     """Validate result consistency with input."""
+    # max_score must match
+    if result.max_score != inp.max_score:
+        raise LLMInvalidResponseError(
+            f"result.max_score {result.max_score} != input.max_score {inp.max_score}"
+        )
+
     # Score bounds
     if result.score > inp.max_score:
         raise LLMInvalidResponseError(
@@ -115,3 +121,12 @@ def _validate_against_input(result: SQLGradingResult, inp: SQLGradingInput) -> N
     # Duplicate IDs
     if len(result.criteria) != len(result_ids):
         raise LLMInvalidResponseError("Duplicate criterion IDs in result")
+
+    # Criterion max_score must match input rubric
+    input_max_map = {c.id: c.points for c in inp.scoring_criteria}
+    for rc in result.criteria:
+        expected_max = input_max_map.get(rc.id)
+        if expected_max is not None and rc.max_score != expected_max:
+            raise LLMInvalidResponseError(
+                f"criterion '{rc.id}': max_score {rc.max_score} != rubric {expected_max}"
+            )

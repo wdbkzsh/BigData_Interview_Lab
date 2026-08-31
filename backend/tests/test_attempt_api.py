@@ -513,12 +513,16 @@ class TestSQLAttempt:
         )
         assert resp.status_code == 201
         data = resp.json()
-        assert data["status"] == "completed"
+        # SQL with mock provider → awaiting_confirmation (AI graded successfully)
+        assert data["status"] == "awaiting_confirmation"
         assert data["is_correct"] is None
         assert data["score"] is None
         assert data["correct_answer"] is None
         assert data["reference_answer"] is None
         assert data["explanation"] is None
+        # Assessment should be present
+        assert "assessment" in data
+        assert data["assessment"]["status"] == "success"
 
 
 # ---------------------------------------------------------------------------

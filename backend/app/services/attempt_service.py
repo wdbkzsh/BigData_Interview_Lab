@@ -95,7 +95,10 @@ def create_attempt(
         explanation = payload.get("explanation")
         # No auto-grading: is_correct, score, max_score remain None
 
-    # sql: status="completed", no auto-grading, no feedback
+    elif q.question_type == "sql":
+        status = "grading"
+        # No auto-grading: is_correct, score, max_score remain None
+        # AI grading happens after attempt is persisted
 
     # 5. Create attempt
     attempt = Attempt(
@@ -184,13 +187,24 @@ def create_attempt(
             attempt_created_at=attempt.created_at,
         )
 
-    # 9. Single commit for everything
+    # 9. Single commit for everything (Transaction A for SQL)
     try:
         db.commit()
         db.refresh(attempt)
     except Exception:
         db.rollback()
         raise
+
+    # 10. SQL: grade via LLM (Transaction B)
+    sql_assessment = None
+    if q.question_type == "sql":
+        from app.llm.factory import create_provider
+        from app.llm.service import LLMService
+        from app.services.sql_grading_service import grade_sql_attempt
+
+        provider = create_provider()
+        llm_service = LLMService(provider)
+        sql_assessment = grade_sql_attempt(db, attempt=attempt, llm_service=llm_service)
 
     return _build_new_response(
         attempt,
@@ -199,6 +213,7 @@ def create_attempt(
         correct_answer=correct_answer,
         reference_answer=reference_answer,
         explanation=explanation,
+        sql_assessment=sql_assessment,
     )
 
 
@@ -210,9 +225,10 @@ def _build_new_response(
     correct_answer: Optional[str],
     reference_answer: Optional[str],
     explanation: Optional[str],
+    sql_assessment: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Build response dict for a newly created attempt."""
-    return {
+    result = {
         "attempt_id": attempt.id,
         "question_id": attempt.question_id,
         "question_revision": attempt.question_revision,
@@ -225,6 +241,10 @@ def _build_new_response(
         "explanation": explanation,
         "existed": False,
     }
+    if sql_assessment:
+        result["assessment"] = sql_assessment.get("assessment")
+        result["expected_sql"] = sql_assessment.get("expected_sql")
+    return result
 
 
 def _build_response_from_existing(db: Session, attempt: Attempt) -> dict[str, Any]:
@@ -504,6 +524,9 @@ class SelfAssessmentConflictError(Exception):
 
 def get_attempt_detail(db: Session, attempt_id: int) -> Optional[dict[str, Any]]:
     """Get attempt detail with reference_answer/explanation for awaiting SA."""
+    from app.db.models.attempt import AIAssessment
+    from app.db.models.question import Question, QuestionVersion
+
     attempt = db.query(Attempt).filter(Attempt.id == attempt_id).first()
     if not attempt:
         return None
@@ -520,8 +543,6 @@ def get_attempt_detail(db: Session, attempt_id: int) -> Optional[dict[str, Any]]
 
     # For awaiting self-assessment, include reference_answer/explanation
     if attempt.status == "awaiting_self_assessment":
-        from app.db.models.question import Question, QuestionVersion
-
         q = (
             db.query(Question.question_type)
             .filter(Question.id == attempt.question_id)
@@ -541,25 +562,91 @@ def get_attempt_detail(db: Session, attempt_id: int) -> Optional[dict[str, Any]]
                 result["reference_answer"] = payload.get("reference_answer")
                 result["explanation"] = payload.get("explanation")
 
+    # For SQL awaiting_confirmation or grading_failed, include assessment
+    if attempt.status in ("awaiting_confirmation", "grading_failed"):
+        assessment = (
+            db.query(AIAssessment)
+            .filter(AIAssessment.attempt_id == attempt.id)
+            .order_by(AIAssessment.id.desc())
+            .first()
+        )
+        if assessment:
+            assessment_data: dict[str, Any] = {
+                "assessment_id": assessment.id,
+                "status": assessment.status,
+                "raw_score": assessment.raw_score,
+                "max_score": assessment.max_score,
+            }
+            if assessment.result_json:
+                parsed = json.loads(assessment.result_json)
+                assessment_data["criteria"] = parsed.get("criteria", [])
+                assessment_data["knowledge_analysis"] = parsed.get("knowledge_analysis", {})
+                assessment_data["errors"] = parsed.get("errors", [])
+                assessment_data["suggestions"] = parsed.get("suggestions", [])
+                assessment_data["reasoning_summary"] = parsed.get("reasoning_summary", "")
+            if assessment.error_message:
+                assessment_data["error_message"] = assessment.error_message
+            result["assessment"] = assessment_data
+
+        # Include expected_sql for awaiting_confirmation
+        if attempt.status == "awaiting_confirmation":
+            version = (
+                db.query(QuestionVersion)
+                .filter(
+                    QuestionVersion.question_id == attempt.question_id,
+                    QuestionVersion.revision == attempt.question_revision,
+                )
+                .first()
+            )
+            if version:
+                payload = json.loads(version.payload_json)
+                result["expected_sql"] = payload.get("expected_sql")
+
     return result
 
 
 def get_pending_attempts(db: Session) -> dict[str, list[dict[str, Any]]]:
-    """Get all attempts awaiting self-assessment."""
-    rows = (
+    """Get all pending attempts grouped by type."""
+    # Short Answer awaiting self-assessment
+    sa_rows = (
         db.query(Attempt)
         .filter(Attempt.status == "awaiting_self_assessment")
         .order_by(Attempt.created_at.asc())
         .all()
     )
-
-    items = [
+    sa_items = [
         {
             "attempt_id": r.id,
             "question_id": r.question_id,
             "created_at": str(r.created_at) if r.created_at else None,
         }
-        for r in rows
+        for r in sa_rows
     ]
 
-    return {"short_answer_self_assessment": items}
+    # SQL awaiting confirmation
+    from app.db.models.attempt import AIAssessment
+    sql_rows = (
+        db.query(Attempt)
+        .filter(Attempt.status == "awaiting_confirmation")
+        .order_by(Attempt.created_at.asc())
+        .all()
+    )
+    sql_items = []
+    for r in sql_rows:
+        # Get latest assessment for raw_score/max_score
+        assessment = (
+            db.query(AIAssessment)
+            .filter(AIAssessment.attempt_id == r.id)
+            .order_by(AIAssessment.id.desc())
+            .first()
+        )
+        sql_items.append({
+            "attempt_id": r.id,
+            "question_id": r.question_id,
+            "created_at": str(r.created_at) if r.created_at else None,
+        })
+
+    return {
+        "short_answer_self_assessment": sa_items,
+        "sql_confirmation": sql_items,
+    }
