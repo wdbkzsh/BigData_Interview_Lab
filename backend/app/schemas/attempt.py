@@ -104,6 +104,9 @@ class PendingAttemptItem(BaseModel):
 
     attempt_id: int
     question_id: str
+    question_revision: Optional[int] = None
+    attempt_type: Optional[str] = None
+    status: Optional[str] = None
     created_at: Optional[str] = None
 
 

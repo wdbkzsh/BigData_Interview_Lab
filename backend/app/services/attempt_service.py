@@ -1003,6 +1003,9 @@ def get_pending_attempts(db: Session) -> dict[str, list[dict[str, Any]]]:
         {
             "attempt_id": r.id,
             "question_id": r.question_id,
+            "question_revision": r.question_revision,
+            "attempt_type": r.attempt_type,
+            "status": r.status,
             "created_at": str(r.created_at) if r.created_at else None,
         }
         for r in sa_rows
@@ -1028,6 +1031,9 @@ def get_pending_attempts(db: Session) -> dict[str, list[dict[str, Any]]]:
         sql_items.append({
             "attempt_id": r.id,
             "question_id": r.question_id,
+            "question_revision": r.question_revision,
+            "attempt_type": r.attempt_type,
+            "status": r.status,
             "created_at": str(r.created_at) if r.created_at else None,
         })
 
@@ -1042,6 +1048,9 @@ def get_pending_attempts(db: Session) -> dict[str, list[dict[str, Any]]]:
         {
             "attempt_id": r.id,
             "question_id": r.question_id,
+            "question_revision": r.question_revision,
+            "attempt_type": r.attempt_type,
+            "status": r.status,
             "created_at": str(r.created_at) if r.created_at else None,
         }
         for r in failed_rows
@@ -1058,6 +1067,9 @@ def get_pending_attempts(db: Session) -> dict[str, list[dict[str, Any]]]:
         {
             "attempt_id": r.id,
             "question_id": r.question_id,
+            "question_revision": r.question_revision,
+            "attempt_type": r.attempt_type,
+            "status": r.status,
             "created_at": str(r.created_at) if r.created_at else None,
         }
         for r in disputed_rows

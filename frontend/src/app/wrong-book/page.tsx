@@ -73,6 +73,9 @@ export default function WrongBookPage() {
     if (item.question_type === "short_answer") {
       return `/practice/short-answer?id=${item.question_id}`
     }
+    if (item.question_type === "sql") {
+      return `/practice/sql?id=${item.question_id}&source=wrong_book`
+    }
     return null
   }
 

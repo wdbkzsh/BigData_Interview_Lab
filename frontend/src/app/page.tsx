@@ -49,7 +49,9 @@ export default function Home() {
   }
 
   const getItemHref = (item: DailyTaskItem) => {
-    const base = item.question_type === 'choice' ? '/practice/choice' : '/practice/short-answer'
+    let base = '/practice/choice'
+    if (item.question_type === 'short_answer') base = '/practice/short-answer'
+    if (item.question_type === 'sql') base = '/practice/sql'
     return `${base}?id=${item.question_id}&revision=${item.question_revision}&attempt_type=${item.item_type}&source=daily`
   }
 
@@ -230,11 +232,8 @@ function TaskItemRow({
         </div>
       </div>
       <div className={styles.taskItemActions}>
-        {isPending && !isSql && (
+        {isPending && (
           <Link href={getItemHref(item)} className={styles.actionBtn}>开始</Link>
-        )}
-        {isPending && isSql && (
-          <span className={styles.sqlDisabled}>Phase 8 开放</span>
         )}
         {isPending && (
           <button className={styles.skipBtn} onClick={() => onSkip(item.id)} type="button">跳过</button>

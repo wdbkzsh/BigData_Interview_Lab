@@ -4,19 +4,25 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import {
   fetchQuestionDetailAtRevision,
   submitAttempt,
+  fetchAttempt,
   confirmSQLAttempt,
+  regradeSQLAttempt,
+  disputeSQLAttempt,
 } from "@/lib/api"
 import type {
   QuestionDetail,
   AttemptResult,
   AssessmentData,
   SQLConfirmResult,
+  AttemptDetail,
 } from "@/lib/types"
 import styles from "./SQLQuestion.module.css"
 
 interface Props {
   questionId: string
   revision?: number
+  attemptType?: "new" | "review" | "practice"
+  pendingAttemptId?: number | null
   onDone: () => void
 }
 
@@ -25,9 +31,11 @@ type Phase =
   | "loaded"
   | "submitting"
   | "awaiting_confirmation"
-  | "confirming"
-  | "completed"
   | "grading_failed"
+  | "disputed"
+  | "confirming"
+  | "regrading"
+  | "completed"
   | "error"
 
 const DIFFICULTY_LABELS: Record<number, string> = {
@@ -44,7 +52,13 @@ const CRITERION_STATUS_LABELS: Record<string, string> = {
   missing: "未满足",
 }
 
-export default function SQLQuestion({ questionId, revision, onDone }: Props) {
+export default function SQLQuestion({
+  questionId,
+  revision,
+  attemptType = "practice",
+  pendingAttemptId,
+  onDone,
+}: Props) {
   const [question, setQuestion] = useState<QuestionDetail | null>(null)
   const [phase, setPhase] = useState<Phase>("loading")
   const [error, setError] = useState<string | null>(null)
@@ -53,6 +67,8 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
   const [attemptResult, setAttemptResult] = useState<AttemptResult | null>(null)
   const [confirmResult, setConfirmResult] = useState<SQLConfirmResult | null>(null)
   const [adjustScore, setAdjustScore] = useState<string>("")
+  const [disputeReason, setDisputeReason] = useState("")
+  const [showDisputeInput, setShowDisputeInput] = useState(false)
   const [clientRequestId] = useState(() => crypto.randomUUID())
 
   const frozenPayloadRef = useRef<{
@@ -61,7 +77,7 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
     client_request_id: string
   } | null>(null)
 
-  // Load question
+  // Load question detail
   const loadQuestion = useCallback((id: string, rev?: number) => {
     setPhase("loading")
     setError(null)
@@ -76,9 +92,68 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
       })
   }, [])
 
+  // Recover pending attempt
+  const recoverAttempt = useCallback((attemptId: number) => {
+    setPhase("loading")
+    setError(null)
+    fetchAttempt(attemptId)
+      .then((detail) => {
+        // Load question at the attempt's revision
+        fetchQuestionDetailAtRevision(detail.question_id, detail.question_revision)
+          .then((q) => {
+            setQuestion(q)
+            setSqlInput(detail.answer)
+
+            // Build attemptResult from detail
+            const result: AttemptResult = {
+              attempt_id: detail.id,
+              question_id: detail.question_id,
+              question_revision: detail.question_revision,
+              answer: detail.answer,
+              status: detail.status,
+              is_correct: null,
+              score: null,
+              correct_answer: null,
+              reference_answer: null,
+              explanation: null,
+            }
+
+            // Set phase based on status
+            if (detail.status === "awaiting_confirmation") {
+              // Need to get assessment data — rebuild from detail
+              // For now, set phase and let user take action
+              setAttemptResult(result)
+              setPhase("awaiting_confirmation")
+            } else if (detail.status === "grading_failed") {
+              setAttemptResult(result)
+              setPhase("grading_failed")
+            } else if (detail.status === "disputed") {
+              setAttemptResult(result)
+              setPhase("disputed")
+            } else {
+              setAttemptResult(result)
+              setPhase("loaded")
+            }
+          })
+          .catch((err) => {
+            setError(err.message)
+            setPhase("error")
+          })
+      })
+      .catch((err) => {
+        setError(err.message)
+        setPhase("error")
+      })
+  }, [])
+
+  // Initialize
   useEffect(() => {
-    loadQuestion(questionId, revision)
-  }, [questionId, revision, loadQuestion])
+    if (pendingAttemptId) {
+      recoverAttempt(pendingAttemptId)
+    } else {
+      loadQuestion(questionId, revision)
+    }
+  }, [questionId, revision, pendingAttemptId, loadQuestion, recoverAttempt])
 
   // Submit SQL
   const handleSubmit = async () => {
@@ -99,7 +174,7 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
     try {
       const result = await submitAttempt(question.id, {
         question_revision: payload.question_revision,
-        attempt_type: "practice",
+        attempt_type: attemptType,
         client_request_id: payload.client_request_id,
         answer: payload.answer,
       })
@@ -138,7 +213,7 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
 
   // Adjust
   const handleAdjust = async () => {
-    if (!attemptResult || !question) return
+    if (!attemptResult) return
     const score = parseFloat(adjustScore)
     const maxScore = attemptResult.assessment?.max_score ?? 10
 
@@ -163,6 +238,61 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
     }
   }
 
+  // Regrade
+  const handleRegrade = async () => {
+    if (!attemptResult) return
+    setPhase("regrading")
+    setError(null)
+
+    try {
+      const result = await regradeSQLAttempt(attemptResult.attempt_id)
+      // Update attemptResult with new status
+      setAttemptResult((prev) =>
+        prev ? { ...prev, status: result.status } : prev
+      )
+
+      if (result.status === "awaiting_confirmation") {
+        setPhase("awaiting_confirmation")
+      } else if (result.status === "grading_failed") {
+        setPhase("grading_failed")
+      } else {
+        setPhase("awaiting_confirmation")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "重新判题失败")
+      // Restore previous phase
+      if (attemptResult?.status === "grading_failed") {
+        setPhase("grading_failed")
+      } else if (attemptResult?.status === "disputed") {
+        setPhase("disputed")
+      } else {
+        setPhase("awaiting_confirmation")
+      }
+    }
+  }
+
+  // Dispute
+  const handleDispute = async () => {
+    if (!attemptResult || !disputeReason.trim()) return
+    setPhase("confirming")
+    setError(null)
+
+    try {
+      const result = await disputeSQLAttempt(
+        attemptResult.attempt_id,
+        disputeReason.trim()
+      )
+      setAttemptResult((prev) =>
+        prev ? { ...prev, status: result.status } : prev
+      )
+      setPhase("disputed")
+      setShowDisputeInput(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "标记争议失败")
+      setPhase("awaiting_confirmation")
+    }
+  }
+
   // --- Render ---
 
   if (phase === "loading") {
@@ -175,7 +305,13 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
         <p>{error}</p>
         <button
           className={styles.retryButton}
-          onClick={() => loadQuestion(questionId, revision)}
+          onClick={() => {
+            if (pendingAttemptId) {
+              recoverAttempt(pendingAttemptId)
+            } else {
+              loadQuestion(questionId, revision)
+            }
+          }}
           type="button"
         >
           重试
@@ -191,6 +327,8 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
   const assessment = attemptResult?.assessment
   const maxScore = assessment?.max_score ?? 10
   const isConfirming = phase === "confirming"
+  const isRegrading = phase === "regrading"
+  const isProcessing = isConfirming || isRegrading
 
   return (
     <div className={styles.container}>
@@ -256,9 +394,11 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
         </>
       )}
 
-      {/* Submitting */}
-      {phase === "submitting" && (
-        <div className={styles.processing}>AI 正在判题…</div>
+      {/* Submitting / Regrading */}
+      {(phase === "submitting" || phase === "regrading") && (
+        <div className={styles.processing}>
+          {phase === "submitting" ? "AI 正在判题…" : "AI 正在重新判题…"}
+        </div>
       )}
 
       {/* Submit error */}
@@ -266,40 +406,75 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
         <div className={styles.submitError}>{error}</div>
       )}
 
-      {/* Grading failed */}
+      {/* User SQL (locked) — shown in all post-submit states */}
+      {attemptResult && phase !== "loaded" && phase !== "submitting" && (
+        <div className={styles.userSqlReadonly}>
+          <h4 className={styles.sectionTitle}>你的 SQL</h4>
+          <pre className={styles.codeBlock}>{attemptResult.answer}</pre>
+        </div>
+      )}
+
+      {/* grading_failed */}
       {phase === "grading_failed" && attemptResult && (
         <div className={styles.feedback}>
           <div className={styles.feedbackTitle} style={{ color: "#c62828" }}>
             ❌ AI 判题失败
           </div>
-          {attemptResult.assessment?.error_message && (
-            <p className={styles.feedbackText}>
-              {attemptResult.assessment.error_message}
-            </p>
-          )}
-          <div className={styles.userSqlReadonly}>
-            <h4 className={styles.sectionTitle}>你的 SQL</h4>
-            <pre className={styles.codeBlock}>{attemptResult.answer}</pre>
+          <p className={styles.feedbackText}>
+            {assessment?.error_message || "判题过程中出现错误，请稍后重试。"}
+          </p>
+          <div className={styles.confirmActions}>
+            <button
+              className={styles.acceptButton}
+              onClick={handleRegrade}
+              disabled={isProcessing}
+              type="button"
+            >
+              {isRegrading ? "重新判题中..." : "重新判题"}
+            </button>
           </div>
           <button
             className={styles.backButton}
             onClick={onDone}
             type="button"
           >
-            返回 SQL 题库
+            返回题库
           </button>
         </div>
       )}
 
-      {/* Awaiting confirmation — show AI results */}
+      {/* disputed */}
+      {phase === "disputed" && attemptResult && (
+        <div className={styles.feedback}>
+          <div className={styles.feedbackTitle} style={{ color: "#e65100" }}>
+            ⚠️ 已标记争议
+          </div>
+          <p className={styles.feedbackText}>
+            该判题已标记为有异议。您可以重新判题以获取新的 AI 评估。
+          </p>
+          <div className={styles.confirmActions}>
+            <button
+              className={styles.acceptButton}
+              onClick={handleRegrade}
+              disabled={isProcessing}
+              type="button"
+            >
+              {isRegrading ? "重新判题中..." : "重新判题"}
+            </button>
+          </div>
+          <button
+            className={styles.backButton}
+            onClick={onDone}
+            type="button"
+          >
+            返回题库
+          </button>
+        </div>
+      )}
+
+      {/* awaiting_confirmation — show AI results */}
       {phase === "awaiting_confirmation" && attemptResult && assessment && (
         <>
-          {/* User SQL (locked) */}
-          <div className={styles.userSqlReadonly}>
-            <h4 className={styles.sectionTitle}>你的 SQL</h4>
-            <pre className={styles.codeBlock}>{attemptResult.answer}</pre>
-          </div>
-
           {/* AI Score */}
           <div className={styles.aiScore}>
             <span className={styles.aiScoreLabel}>AI 建议分数</span>
@@ -416,7 +591,7 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
             <button
               className={styles.acceptButton}
               onClick={handleAccept}
-              disabled={isConfirming}
+              disabled={isProcessing}
               type="button"
             >
               {isConfirming ? "处理中..." : "接受 AI 评分"}
@@ -436,23 +611,60 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
               <button
                 className={styles.adjustButton}
                 onClick={handleAdjust}
-                disabled={isConfirming || !adjustScore}
+                disabled={isProcessing || !adjustScore}
                 type="button"
               >
                 调整分数
               </button>
             </div>
+
+            <button
+              className={styles.adjustButton}
+              onClick={handleRegrade}
+              disabled={isProcessing}
+              type="button"
+            >
+              {isRegrading ? "重新判题中..." : "重新判题"}
+            </button>
+
+            <button
+              className={styles.adjustButton}
+              onClick={() => setShowDisputeInput(!showDisputeInput)}
+              disabled={isProcessing}
+              type="button"
+            >
+              对此评分有异议
+            </button>
           </div>
 
-          {/* Confirm error */}
-          {error && (
-            <div className={styles.submitError}>{error}</div>
+          {/* Dispute input */}
+          {showDisputeInput && (
+            <div className={styles.disputeSection}>
+              <textarea
+                className={styles.disputeInput}
+                value={disputeReason}
+                onChange={(e) => setDisputeReason(e.target.value)}
+                placeholder="请说明争议原因..."
+                rows={3}
+              />
+              <button
+                className={styles.adjustButton}
+                onClick={handleDispute}
+                disabled={isProcessing || !disputeReason.trim()}
+                type="button"
+              >
+                提交争议
+              </button>
+            </div>
           )}
+
+          {/* Error */}
+          {error && <div className={styles.submitError}>{error}</div>}
         </>
       )}
 
-      {/* Confirming */}
-      {isConfirming && (
+      {/* Confirming / processing */}
+      {isProcessing && !isRegrading && (
         <div className={styles.processing}>处理中...</div>
       )}
 
@@ -499,7 +711,7 @@ export default function SQLQuestion({ questionId, revision, onDone }: Props) {
             onClick={onDone}
             type="button"
           >
-            返回 SQL 题库
+            返回题库
           </button>
         </div>
       )}

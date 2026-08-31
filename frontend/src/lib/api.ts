@@ -293,3 +293,31 @@ export async function confirmSQLAttempt(
     }
   )
 }
+
+/** POST /api/v1/attempts/{id}/regrade */
+export async function regradeSQLAttempt(
+  attemptId: number
+): Promise<{ attempt_id: number; status: string; assessment?: import("./types").AssessmentData }> {
+  return apiFetch(`/api/v1/attempts/${attemptId}/regrade`, {
+    method: "POST",
+  })
+}
+
+/** POST /api/v1/attempts/{id}/dispute */
+export async function disputeSQLAttempt(
+  attemptId: number,
+  reason: string
+): Promise<{ attempt_id: number; status: string }> {
+  return apiFetch(`/api/v1/attempts/${attemptId}/dispute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  })
+}
+
+/** GET /api/v1/attempts/{id} */
+export async function fetchAttempt(
+  attemptId: number
+): Promise<import("./types").AttemptDetail> {
+  return apiFetch(`/api/v1/attempts/${attemptId}`)
+}

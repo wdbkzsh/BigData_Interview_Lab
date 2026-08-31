@@ -202,11 +202,17 @@ export interface AttemptDetail {
 export interface PendingAttemptItem {
   attempt_id: number
   question_id: string
+  question_revision: number | null
+  attempt_type: string | null
+  status: string | null
   created_at: string | null
 }
 
 export interface PendingAttemptsResponse {
   short_answer_self_assessment: PendingAttemptItem[]
+  sql_confirmation: PendingAttemptItem[]
+  sql_grading_failed: PendingAttemptItem[]
+  sql_disputed: PendingAttemptItem[]
 }
 
 // ---------------------------------------------------------------------------

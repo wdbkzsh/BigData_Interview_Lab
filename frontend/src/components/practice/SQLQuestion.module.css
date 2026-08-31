@@ -347,6 +347,23 @@
   color: var(--text-secondary, #999);
 }
 
+.disputeSection {
+  margin-top: 12px;
+  margin-bottom: 16px;
+}
+
+.disputeInput {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 8px;
+}
+
 .error {
   color: #c62828;
 }
