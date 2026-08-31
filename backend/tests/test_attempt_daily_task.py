@@ -11,6 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from sqlalchemy import text
+
 from app.content.importer import import_content
 from app.db.models.daily_task import DailyTask, DailyTaskItem
 from app.db.models.question import Question
@@ -484,6 +486,106 @@ class TestShortAnswerSelfAssessmentCompletion:
         # Item should still be pending (practice doesn't complete)
         db_item = tmp_db.query(DailyTaskItem).filter(DailyTaskItem.id == item["id"]).first()
         assert db_item.status == "pending"
+
+
+# ---------------------------------------------------------------------------
+# Short Answer cross-day completion
+# ---------------------------------------------------------------------------
+
+class TestShortAnswerCrossDay:
+    def test_day1_attempt_completes_day1_item_not_day2(
+        self, tmp_db: Session, content_dir: Path
+    ):
+        """Day 1: submit SA attempt → awaiting_sa. Day 2: self-assessment.
+        Must complete Day 1 Item, NOT Day 2 Item."""
+        from datetime import datetime, timezone, timedelta as td
+        from app.db.models.daily_task import DailyTask, DailyTaskItem
+
+        _write_content(content_dir)
+        import_content(content_dir, tmp_db)
+
+        today = get_business_today()
+        yesterday = today - td(days=1)
+
+        # Create Day 1 DailyTask manually (past date — can't use get_or_create_today)
+        task1 = DailyTask(task_date=yesterday, status="not_started", new_question_target=1)
+        tmp_db.add(task1)
+        tmp_db.flush()
+
+        item1 = DailyTaskItem(
+            daily_task_id=task1.id,
+            question_id="spark.shuffle.qa.001",
+            question_revision=1,
+            item_type="new",
+            sort_order=1,
+            status="pending",
+            due_date_snapshot=None,
+        )
+        tmp_db.add(item1)
+
+        # Create Day 2 DailyTask (today)
+        task2 = DailyTask(task_date=today, status="not_started", new_question_target=1)
+        tmp_db.add(task2)
+        tmp_db.flush()
+
+        item2 = DailyTaskItem(
+            daily_task_id=task2.id,
+            question_id="spark.shuffle.qa.001",
+            question_revision=1,
+            item_type="new",
+            sort_order=1,
+            status="pending",
+            due_date_snapshot=None,
+        )
+        tmp_db.add(item2)
+
+        # Create an Attempt with created_at = yesterday (simulating Day 1 submission)
+        # First, create a QuestionVersion for revision 1 (already exists from import)
+        from app.db.models.attempt import Attempt
+        attempt = Attempt(
+            question_id="spark.shuffle.qa.001",
+            question_revision=1,
+            attempt_type="new",
+            user_answer="test answer",
+            status="awaiting_self_assessment",
+            client_request_id=str(uuid4()),
+        )
+        tmp_db.add(attempt)
+        tmp_db.flush()
+
+        # Manually set created_at to yesterday
+        yesterday_dt = datetime(yesterday.year, yesterday.month, yesterday.day, 12, 0, 0)
+        tmp_db.execute(
+            text("UPDATE attempt SET created_at = :dt WHERE id = :id"),
+            {"dt": str(yesterday_dt), "id": attempt.id},
+        )
+        tmp_db.commit()
+
+        # Now self-assess (simulating Day 2)
+        client = _make_client(tmp_db)
+        resp = client.post(
+            f"/api/v1/attempts/{attempt.id}/self-assessment",
+            json={"mastery_state": "familiar"},
+        )
+        assert resp.status_code == 201
+
+        # Day 1 Item → completed
+        db_item1 = tmp_db.query(DailyTaskItem).filter(DailyTaskItem.id == item1.id).first()
+        assert db_item1.status == "completed"
+        assert db_item1.completed_attempt_id == attempt.id
+
+        # Day 2 Item → still pending
+        db_item2 = tmp_db.query(DailyTaskItem).filter(DailyTaskItem.id == item2.id).first()
+        assert db_item2.status == "pending"
+        assert db_item2.completed_attempt_id is None
+
+        # Day 1 aggregate updated
+        tmp_db.refresh(task1)
+        assert task1.status == "completed"
+
+        # Day 2 aggregate unchanged
+        tmp_db.refresh(task2)
+        assert task2.status == "not_started"
 
 
 # ---------------------------------------------------------------------------

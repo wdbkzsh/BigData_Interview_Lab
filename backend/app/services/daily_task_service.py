@@ -415,16 +415,15 @@ def complete_item_for_attempt(
         return
 
     # Find the DailyTask for the business date when the attempt was created
+    # SQLite returns naive datetimes — treat as UTC
     tz = ZoneInfo(settings.APP_TIMEZONE)
     if attempt_created_at is not None:
-        # Convert attempt timestamp to business date
-        if hasattr(attempt_created_at, 'astimezone'):
-            biz_date = attempt_created_at.astimezone(tz).date()
+        if attempt_created_at.tzinfo is None:
+            # Naive datetime from SQLite — assume UTC
+            aware = attempt_created_at.replace(tzinfo=timezone.utc)
         else:
-            # naive datetime — assume UTC then convert
-            from datetime import datetime as dt_cls, timezone as tz_mod
-            aware = attempt_created_at.replace(tzinfo=tz_mod.utc)
-            biz_date = aware.astimezone(tz).date()
+            aware = attempt_created_at
+        biz_date = aware.astimezone(tz).date()
     else:
         biz_date = get_business_today()
 
